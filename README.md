@@ -47,7 +47,7 @@ make docker-test
 make docker-smoke
 ```
 
-`make docker-test` uses an isolated `<COMPOSE_PROJECT_NAME>-test` Compose project and cleans it up on exit. `make docker-smoke` starts the dev container, verifies the seeded API state, then stops the container so normal pass/fail runs do not leave a running smoke container behind.
+`make docker-test` uses isolated Compose project/image names, bind-mounts the current worktree read-only into the test container, and cleans the test project up on exit. Use Compose project-label filters for cleanup proof; broad `name=project-scientist` filters can match unrelated legacy containers from other local worktrees. `make docker-smoke` starts the dev container, verifies the seeded API state, then stops the container so normal pass/fail runs do not leave a running smoke container behind.
 
 Seed synthetic local-only data through the running dev API:
 

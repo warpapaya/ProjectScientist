@@ -53,9 +53,9 @@ The default Make workflow derives a Compose project name from the repo directory
 ```text
 COMPOSE_PROJECT_NAME ?= project-scientist-<repo-dir>
 DEV_PORT ?= 8097
-PSC_IMAGE_TAG ?= project-scientist:dev-local
-PSC_TEST_IMAGE_TAG ?= project-scientist:test-local
-DOCKER_GO_PARALLEL ?= 2
+PSC_IMAGE_TAG ?= <COMPOSE_PROJECT_NAME>:dev-local
+PSC_TEST_IMAGE_TAG ?= <COMPOSE_PROJECT_NAME>:test-local
+DOCKER_GO_PARALLEL ?= 1
 ```
 
 Compose service names are project-scoped and the workflow intentionally does not set `container_name`, so multiple worktrees can use separate Compose projects. When two local clones may run the dev HTTP service at the same time, give each one a unique project and loopback port:
@@ -66,7 +66,7 @@ make docker-smoke COMPOSE_PROJECT_NAME=project-scientist-$USER-a DEV_PORT=18097
 make dev-down COMPOSE_PROJECT_NAME=project-scientist-$USER-a DEV_PORT=18097
 ```
 
-`make docker-test` automatically runs under `<COMPOSE_PROJECT_NAME>-test`, so one-off test containers/networks do not share the long-running dev project.
+`make docker-test` automatically runs under a unique `<COMPOSE_PROJECT_NAME>-test-<timestamp>-<pid>` project, so one-off test containers/networks do not share the long-running dev project and back-to-back runs do not race a just-removed test network.
 
 Stop the local container without deleting the named data volume:
 
@@ -100,13 +100,13 @@ Validate the Docker build/test lane without relying on host Go caches or a host-
 make docker-test
 ```
 
-This runs the Compose `project-scientist-test` profile/service in an isolated `<COMPOSE_PROJECT_NAME>-test` project, building the Dockerfile `test` target and executing:
+This runs the Compose `project-scientist-test` profile/service in an isolated `<COMPOSE_PROJECT_NAME>-test-<timestamp>-<pid>` project. The Dockerfile `test` target installs the CGO toolchain and pre-downloads modules, then Compose bind-mounts the current worktree read-only at `/src` and executes:
 
 ```bash
 go test -mod=readonly ./...
 ```
 
-The Dockerfile pre-downloads Go modules before copying source and sets `GOMAXPROCS`/`GOFLAGS=-p=<DOCKER_GO_PARALLEL>` in build/test stages. The default cap is `2` to reduce CGO/sqlite compile pressure on local concurrent workers; raise it only when the host is idle.
+The source bind mount keeps repeated Docker test runs from rebuilding/exporting a source-copy image layer while still testing the live worktree. Make also defaults image tags to the Compose project (`<COMPOSE_PROJECT_NAME>:dev-local` and `<COMPOSE_PROJECT_NAME>:test-local`) so concurrent worktrees do not overwrite each other's local images. The test image carries a dependency SHA label derived from `Dockerfile`, `go.mod`, and `go.sum`; `make docker-test` rebuilds that image only when the SHA changes, then runs without `--build` to avoid repeated BuildKit export/unpack pressure. The Dockerfile/Compose test lane sets `GOMAXPROCS`/`GOFLAGS=-p=<DOCKER_GO_PARALLEL>` and uses an ephemeral container Go cache. The default cap is `1` to reduce CGO/sqlite compile pressure on local concurrent workers; raise it only when the host is idle.
 
 Validate the development container, health endpoint, seed path, and API state smoke:
 
@@ -130,6 +130,17 @@ make dev-down
 
 This removes the project container/network and preserves the project-scoped `project-scientist-data` volume.
 
+Use Compose project labels for cleanup proof, not broad container-name filters. Example:
+
+```bash
+docker ps -a --filter label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-project-scientist-$(basename "$PWD")}
+docker ps -a --filter label=com.docker.compose.project --format '{{.Label "com.docker.compose.project"}} {{.Names}}' | grep "^${COMPOSE_PROJECT_NAME:-project-scientist-$(basename "$PWD")}-test-" || true
+docker network ls --filter label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-project-scientist-$(basename "$PWD")}
+docker network ls --filter label=com.docker.compose.project --format '{{.Label "com.docker.compose.project"}} {{.Name}}' | grep "^${COMPOSE_PROJECT_NAME:-project-scientist-$(basename "$PWD")}-test-" || true
+```
+
+Avoid using `docker ps -a --filter name=project-scientist` as cleanup evidence on shared developer hosts. It can match unrelated legacy/default-project containers from other worktrees, including old dev or test runs that are outside the current Compose project.
+
 Local-only reset, destructive to this dev volume:
 
 ```bash
@@ -142,7 +153,7 @@ Repo-local runtime directories are ignored and excluded from Docker context: `da
 
 ## Determinism and image review
 
-- Compose uses a directory-derived project name by default, supports explicit `COMPOSE_PROJECT_NAME`/`DEV_PORT` overrides for concurrent workers, uses deterministic local image tags (`project-scientist:dev-local`, `project-scientist:test-local`), loopback-only port binding, and a named dev data volume scoped by Compose project.
+- Compose uses a directory-derived project name by default, supports explicit `COMPOSE_PROJECT_NAME`/`DEV_PORT` overrides for concurrent workers, uses project-scoped local image tags (`<COMPOSE_PROJECT_NAME>:dev-local`, `<COMPOSE_PROJECT_NAME>:test-local`), loopback-only port binding, and a named dev data volume scoped by Compose project.
 - Dockerfile build/runtime bases are pinned by digest and should only be updated deliberately.
 - Runtime stays dependency-light: static Go binary on Alpine, non-root `scientist` user, SQLite file persistence only, no Redis/auth/proxy services added in this lane.
 - SQLite uses `github.com/mattn/go-sqlite3`, so Docker build/test stages install Alpine `gcc`/`musl-dev` and compile with CGO enabled; build tooling is not copied into the runtime stage.
@@ -168,7 +179,7 @@ make test         # host go test -mod=readonly ./...
 make vet          # host go vet ./...
 make fmt-check    # verify gofmt cleanliness
 make ci           # local aggregate: host gates + Docker test/build
-make docker-test  # Docker/Compose test lane in <COMPOSE_PROJECT_NAME>-test; cleans up on exit
+make docker-test  # Docker/Compose test lane in a unique <COMPOSE_PROJECT_NAME>-test-* project; cleans up on exit
 make docker-build # build runtime container image
 make docker-smoke # start local app, seed synthetic data, verify API state, stop container
 make image-review # print local image size/user/cmd/layers

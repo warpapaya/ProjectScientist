@@ -6,7 +6,7 @@ services:
       context: .
       target: runtime
       args:
-        GO_PARALLEL: ${PSC_DOCKER_GO_PARALLEL:-2}
+        GO_PARALLEL: ${PSC_DOCKER_GO_PARALLEL:-1}
     image: ${PSC_IMAGE_TAG:-project-scientist:dev-local}
     ports:
       - "127.0.0.1:${PSC_DEV_PORT:-8097}:8080"
@@ -27,8 +27,19 @@ services:
       context: .
       target: test
       args:
-        GO_PARALLEL: ${PSC_DOCKER_GO_PARALLEL:-2}
+        GO_PARALLEL: ${PSC_DOCKER_GO_PARALLEL:-1}
+        TEST_DEPS_SHA: ${PSC_TEST_DEPS_SHA:-unknown}
     image: ${PSC_TEST_IMAGE_TAG:-project-scientist:test-local}
+    environment:
+      CGO_ENABLED: "1"
+      GOCACHE: /tmp/go-cache
+      GOMAXPROCS: ${PSC_DOCKER_GO_PARALLEL:-1}
+      GOFLAGS: -p=${PSC_DOCKER_GO_PARALLEL:-1}
+    volumes:
+      - type: bind
+        source: .
+        target: /src
+        read_only: true
     profiles:
       - test
 
