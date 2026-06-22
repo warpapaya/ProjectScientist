@@ -85,7 +85,7 @@ Prove the system denies and audits:
 
 The broad roadmap remains the source of truth for parity. The MVP track adds explicit vertical-slice closure:
 
-- MVP-001: MVP acceptance contract and demo script.
+- MVP-001: MVP acceptance contract and demo script (`docs/mvp-acceptance-contract-demo-script.md`).
 - MVP-002: Synthetic lab fixture/scenario pack.
 - MVP-003: Critical-path UX click-budget spec.
 - MVP-004: Local demo seed/reset command.
