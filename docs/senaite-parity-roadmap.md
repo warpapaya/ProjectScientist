@@ -201,7 +201,7 @@ Goal: analysts can do work without spreadsheet gymnastics.
 Tasks:
 - Analysis request lines.
 - Worksheets by method/department/batch.
-- Result entry grid.
+- Result entry grid (`docs/result-entry-grid-workflow.md`).
 - Result qualifiers/limits/units.
 - Calculations/derived results.
 - Review queue.
