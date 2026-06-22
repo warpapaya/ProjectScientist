@@ -43,6 +43,8 @@ type pageData struct {
 	Analytes                    []lab.CatalogAnalyte
 	Services                    []lab.AnalysisService
 	Profiles                    []lab.AnalysisProfile
+	AnalysisRequestLines        []lab.AnalysisRequestLine
+	Worksheets                  []lab.Worksheet
 	SampleReference             []lab.SampleReferenceItem
 	MatrixReferences            []lab.SampleReferenceItem
 	ContainerReferences         []lab.SampleReferenceItem
@@ -118,6 +120,8 @@ func serve() error {
 	mux.HandleFunc("POST /api/sample-intake-templates/", application.createSamplesFromTemplate)
 	mux.HandleFunc("POST /api/samples", application.createSample)
 	mux.HandleFunc("POST /api/samples/", application.transitionSample)
+	mux.HandleFunc("POST /api/worksheets", application.createWorksheet)
+	mux.HandleFunc("POST /api/worksheets/", application.routeWorksheetMutation)
 	mux.HandleFunc("POST /api/catalog/departments", application.createCatalogDepartment)
 	mux.HandleFunc("POST /api/catalog/units", application.createCatalogUnit)
 	mux.HandleFunc("POST /api/catalog/methods", application.createCatalogMethod)
@@ -435,6 +439,8 @@ func (a *app) pageData(scope lab.Scope, auditLimit int) pageData {
 		Analytes:                    a.store.CatalogAnalytesForScope(scope),
 		Services:                    a.store.AnalysisServicesForScope(scope),
 		Profiles:                    a.store.AnalysisProfilesForScope(scope),
+		AnalysisRequestLines:        a.store.AnalysisRequestLinesForScope(scope),
+		Worksheets:                  a.store.WorksheetsForScope(scope),
 		SampleReference:             references,
 		MatrixReferences:            sampleReferencesByKind(references, lab.SampleReferenceMatrix),
 		ContainerReferences:         sampleReferencesByKind(references, lab.SampleReferenceContainer),
@@ -649,6 +655,58 @@ func (a *app) transitionSample(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.store.TransitionSampleForScope(scopeFromRequest(r), sampleID, lab.SampleStatus(r.FormValue("status")), actor(r)); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if wantsJSON(r) {
+		writeJSON(w, map[string]string{"status": "ok"}, http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+}
+
+func (a *app) createWorksheet(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	worksheet, err := a.store.CreateWorksheetForScope(scopeFromRequest(r), lab.CreateWorksheetInput{AnalysisRequestLineIDs: splitIDs(r.Form["analysis_request_line_ids"]), BatchID: r.FormValue("batch_id"), AnalystID: r.FormValue("analyst_id")}, actor(r))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if wantsJSON(r) {
+		writeJSON(w, worksheet, http.StatusCreated)
+		return
+	}
+	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+}
+
+func (a *app) routeWorksheetMutation(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/worksheets/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) < 2 || parts[0] == "" {
+		http.NotFound(w, r)
+		return
+	}
+	worksheetID := parts[0]
+	var err error
+	switch {
+	case len(parts) == 2 && parts[1] == "assign":
+		err = a.store.AssignWorksheetAnalystForScope(scopeFromRequest(r), worksheetID, r.FormValue("analyst_id"), actor(r))
+	case len(parts) == 2 && parts[1] == "transition":
+		err = a.store.TransitionWorksheetForScope(scopeFromRequest(r), worksheetID, lab.WorksheetStatus(r.FormValue("status")), actor(r))
+	case len(parts) == 4 && parts[1] == "lines" && parts[3] == "remove":
+		err = a.store.RemoveWorksheetLineForScope(scopeFromRequest(r), worksheetID, parts[2], actor(r))
+	default:
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
