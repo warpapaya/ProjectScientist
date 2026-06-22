@@ -27,6 +27,8 @@ Current state after bootstrap: RED/ORANGE. The app runs locally and has the firs
 
 ## Major SENAITE-Parity Domains
 
+Detailed field-level mapping and migration rules are maintained in `docs/senaite-field-mapping-migration-spec.md`.
+
 ### 1. Platform foundation
 
 Needed:
