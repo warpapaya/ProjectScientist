@@ -70,6 +70,7 @@ func demoSeedActorForTest() ActorContext {
 		AuthProvider:      "local-dev",
 		RequestID:         "demo-seed-test",
 		CorrelationID:     "demo-seed-test",
-		TenantMemberships: []TenantMembership{{TenantID: DefaultTenantID}},
+		TenantMemberships: []TenantMembership{{TenantID: DefaultTenantID, Roles: []string{string(RoleLabManager)}}},
+		Roles:             []string{string(RoleLabManager)},
 	})
 }

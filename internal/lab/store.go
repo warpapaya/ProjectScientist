@@ -447,7 +447,16 @@ func (s *Store) CreateClientForScope(scope Scope, name, email string, actor Acto
 	}
 	now := time.Now().UTC()
 	var client Client
+	var deniedErr error
 	err = s.withTx(func(tx *sql.Tx) error {
+		allowed, authErr := authorizeOperationTx(tx, scope, OperationClientCreate, actor, AuditResource{Type: "client", ID: "new"}, nil)
+		if authErr != nil {
+			return authErr
+		}
+		if !allowed {
+			deniedErr = ErrAuthorizationDenied
+			return nil
+		}
 		next, err := nextCounter(tx, "next_client")
 		if err != nil {
 			return err
@@ -460,6 +469,9 @@ func (s *Store) CreateClientForScope(scope Scope, name, email string, actor Acto
 	})
 	if err != nil {
 		return Client{}, err
+	}
+	if deniedErr != nil {
+		return Client{}, deniedErr
 	}
 	return client, nil
 }
@@ -483,7 +495,16 @@ func (s *Store) CreateSampleForScope(scope Scope, input CreateSampleInput, actor
 	}
 	now := time.Now().UTC()
 	var sample Sample
+	var deniedErr error
 	err = s.withTx(func(tx *sql.Tx) error {
+		allowed, authErr := authorizeOperationTx(tx, scope, OperationSampleIntake, actor, AuditResource{Type: "sample", ID: "new"}, nil)
+		if authErr != nil {
+			return authErr
+		}
+		if !allowed {
+			deniedErr = ErrAuthorizationDenied
+			return nil
+		}
 		var clientTenant, clientLab string
 		if err := tx.QueryRow(`SELECT tenant_id, lab_id FROM clients WHERE id = ?`, input.ClientID).Scan(&clientTenant, &clientLab); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -523,6 +544,9 @@ func (s *Store) CreateSampleForScope(scope Scope, input CreateSampleInput, actor
 	if err != nil {
 		return Sample{}, err
 	}
+	if deniedErr != nil {
+		return Sample{}, deniedErr
+	}
 	return sample, nil
 }
 
@@ -539,6 +563,14 @@ func (s *Store) TransitionSampleForScope(scope Scope, sampleID string, next Samp
 	}
 	var deniedErr error
 	txErr := s.withTx(func(tx *sql.Tx) error {
+		allowed, authErr := authorizeOperationTx(tx, scope, OperationSampleTransition, actor, AuditResource{Type: "sample", ID: sampleID}, nil)
+		if authErr != nil {
+			return authErr
+		}
+		if !allowed {
+			deniedErr = ErrAuthorizationDenied
+			return nil
+		}
 		sample, err := sampleByIDTx(tx, sampleID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
