@@ -198,13 +198,16 @@ var sqliteMigrations = []string{
 		hash TEXT NOT NULL,
 		created_at TEXT NOT NULL
 	);`,
+	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_audit', '1'), ('last_hash', '');`,
+	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
+}
+
+var sqlitePostMigrationIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_clients_scope ON clients(tenant_id, lab_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_samples_scope ON samples(tenant_id, lab_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_samples_client_id ON samples(client_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_audit_events_sequence ON audit_events(sequence);`,
 	`CREATE INDEX IF NOT EXISTS idx_audit_events_scope ON audit_events(tenant_id, lab_id, sequence);`,
-	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_audit', '1'), ('last_hash', '');`,
-	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
 }
 
 func OpenStore(statePath, _ string) (*Store, error) { return OpenSQLiteStore(statePath) }
@@ -245,6 +248,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	}
 	if err := s.migrateV1AuditSchema(ctx); err != nil {
 		return fmt.Errorf("sqlite v1 audit migration: %w", err)
+	}
+	for _, stmt := range sqlitePostMigrationIndexes {
+		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("sqlite post-migration index: %w", err)
+		}
 	}
 	return nil
 }

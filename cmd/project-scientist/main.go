@@ -13,8 +13,10 @@ import (
 )
 
 type app struct {
-	store *lab.Store
-	tmpl  *template.Template
+	store            *lab.Store
+	tmpl             *template.Template
+	demoResetEnabled bool
+	fixturePath      string
 }
 
 type pageData struct {
@@ -30,11 +32,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("open store: %v", err)
 	}
-	application := &app{store: store, tmpl: template.Must(template.ParseFiles("web/templates/index.html"))}
+	application := &app{
+		store:            store,
+		tmpl:             template.Must(template.ParseFiles("web/templates/index.html")),
+		demoResetEnabled: strings.EqualFold(getenv("PSC_ENABLE_DEMO_RESET", "false"), "true"),
+		fixturePath:      getenv("PSC_SYNTHETIC_FIXTURE_PATH", "/app/fixtures/mvp_synthetic_lab.json"),
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", application.index)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /api/state", application.apiState)
+	mux.HandleFunc("POST /api/demo/reset", application.demoReset)
 	mux.HandleFunc("POST /api/clients", application.createClient)
 	mux.HandleFunc("POST /api/samples", application.createSample)
 	mux.HandleFunc("POST /api/samples/", application.transitionSample)
@@ -57,6 +65,19 @@ func (a *app) index(w http.ResponseWriter, r *http.Request) {
 func (a *app) apiState(w http.ResponseWriter, r *http.Request) {
 	audit, _ := a.store.AuditEvents(50)
 	writeJSON(w, pageData{Clients: a.store.Clients(), Samples: a.store.Samples(), Audit: audit}, http.StatusOK)
+}
+
+func (a *app) demoReset(w http.ResponseWriter, r *http.Request) {
+	if !a.demoResetEnabled {
+		http.NotFound(w, r)
+		return
+	}
+	summary, err := a.store.ResetAndSeedSyntheticDemo(a.fixturePath, actor(r))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, summary, http.StatusOK)
 }
 
 func (a *app) createClient(w http.ResponseWriter, r *http.Request) {

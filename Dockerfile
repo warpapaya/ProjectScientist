@@ -23,6 +23,7 @@ RUN addgroup -S scientist && adduser -S scientist -G scientist && mkdir -p /data
 WORKDIR /app
 COPY --from=build /out/project-scientist /app/project-scientist
 COPY --chown=scientist:scientist web ./web
+COPY --chown=scientist:scientist fixtures ./fixtures
 USER scientist
 ENV PSC_ADDR=:8080 PSC_DATA_DIR=/data
 EXPOSE 8080
