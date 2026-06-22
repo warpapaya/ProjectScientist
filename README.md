@@ -10,9 +10,11 @@ Current status: foundation prototype only. Useful for local architecture pressur
 
 - Few external dependencies: current app adds only the SQLite driver needed for transactional persistence.
 - SQLite-first local persistence with domain state and audit events committed in one transaction.
+- Tenant/lab boundary is part of the domain, storage, audit, API query scope, and UI surface from the local prototype onward.
 - Local-first development in Docker.
 - Dense, low-click UI for daily lab work.
 - Defensible audit logging: every mutation writes an append-only hash-chained audit event with actor, entity, action, timestamp, previous hash, and hash.
+- Every mutable object and audit event carries `tenant_id` and `lab_id`; reads and mutations are scoped by `X-PSC-Tenant-ID`/`X-PSC-Lab-ID` headers or hidden local-dev form scope.
 - Workflow transitions are enforced by the domain layer, not just UI buttons.
 
 ## Run locally
@@ -68,6 +70,7 @@ Full workflow, persistence/reset caveats, CI candidate notes, image review, and 
 - Legal workflow path: received -> in_prep -> in_analysis -> in_review -> released.
 - Illegal transition rejection.
 - Append-only hash-chained audit events stored in SQLite with domain state transactionally.
+- Tenant/lab scoped client/sample creation, sample lookup/listing, transition, audit tail, and `/api/state` reads.
 - Single-screen local UI with quick intake and audit tail.
 - Dockerfile + docker-compose for local Citadel development.
 

@@ -111,3 +111,69 @@ func TestAuditLogIsHashChained(t *testing.T) {
 		}
 	}
 }
+
+func TestTenantLabBoundaryScopesReadsWritesAndAudit(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	alpha := Scope{TenantID: "tenant-alpha", LabID: "water-lab"}
+	beta := Scope{TenantID: "tenant-beta", LabID: "water-lab"}
+
+	client, err := store.CreateClientForScope(alpha, "Alpha Client", "alpha@example.test", "friday")
+	if err != nil {
+		t.Fatalf("create alpha client: %v", err)
+	}
+	if client.TenantID != alpha.TenantID || client.LabID != alpha.LabID {
+		t.Fatalf("client missing tenant/lab scope: %#v", client)
+	}
+
+	if _, err := store.CreateSampleForScope(beta, CreateSampleInput{ClientID: client.ID, Project: "Cross write", Matrix: "Water", Tests: []string{"pH"}}, "mallory"); err == nil {
+		t.Fatalf("expected cross-tenant sample write to fail closed")
+	}
+
+	sample, err := store.CreateSampleForScope(alpha, CreateSampleInput{ClientID: client.ID, Project: "Alpha Project", Matrix: "Water", Tests: []string{"pH"}}, "friday")
+	if err != nil {
+		t.Fatalf("create alpha sample: %v", err)
+	}
+	if sample.TenantID != alpha.TenantID || sample.LabID != alpha.LabID {
+		t.Fatalf("sample missing tenant/lab scope: %#v", sample)
+	}
+	for _, analysis := range sample.Analyses {
+		if analysis.TenantID != alpha.TenantID || analysis.LabID != alpha.LabID {
+			t.Fatalf("analysis missing tenant/lab scope: %#v", analysis)
+		}
+	}
+
+	if _, ok := store.GetSampleForScope(beta, sample.ID); ok {
+		t.Fatalf("cross-tenant sample read should fail closed")
+	}
+	if err := store.TransitionSampleForScope(beta, sample.ID, StatusInPrep, "mallory"); err == nil {
+		t.Fatalf("cross-tenant transition should fail closed")
+	}
+	if got := store.SamplesForScope(beta); len(got) != 0 {
+		t.Fatalf("beta scope should not see alpha samples: %#v", got)
+	}
+
+	events, err := store.AuditEventsForScope(alpha, 0)
+	if err != nil {
+		t.Fatalf("alpha audit events: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected alpha client + sample audit events, got %d", len(events))
+	}
+	for _, event := range events {
+		if event.TenantID != alpha.TenantID || event.LabID != alpha.LabID {
+			t.Fatalf("audit event missing alpha scope: %#v", event)
+		}
+	}
+	betaEvents, err := store.AuditEventsForScope(beta, 0)
+	if err != nil {
+		t.Fatalf("beta audit events: %v", err)
+	}
+	if len(betaEvents) != 0 {
+		t.Fatalf("beta audit should not include alpha events: %#v", betaEvents)
+	}
+}

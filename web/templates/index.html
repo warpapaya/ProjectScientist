@@ -12,7 +12,7 @@
       <p class="eyebrow">Clearline lab test lane</p>
       <h1>Project Scientist</h1>
     </div>
-    <div class="status-pill">Local dev • append-only audit</div>
+    <div class="status-pill">Local dev • {{.Scope.TenantID}}/{{.Scope.LabID}} • append-only audit</div>
   </header>
 
   <main class="shell">
@@ -31,6 +31,8 @@
     <section class="grid two">
       <form class="panel form" method="post" action="/api/clients">
         <h2>New client</h2>
+        <input type="hidden" name="tenant_id" value="{{.Scope.TenantID}}">
+        <input type="hidden" name="lab_id" value="{{.Scope.LabID}}">
         <input name="actor" value="lab-dev" aria-label="Actor">
         <input name="name" placeholder="Client name" required>
         <input name="email" placeholder="Primary contact email">
@@ -39,6 +41,8 @@
 
       <form class="panel form" method="post" action="/api/samples" id="intake">
         <h2>Fast sample intake</h2>
+        <input type="hidden" name="tenant_id" value="{{.Scope.TenantID}}">
+        <input type="hidden" name="lab_id" value="{{.Scope.LabID}}">
         <input name="actor" value="lab-dev" aria-label="Actor">
         <select name="client_id" required>
           <option value="">Client…</option>
@@ -58,11 +62,12 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Client</th><th>Project</th><th>Matrix</th><th>Analyses</th><th>Status</th><th>Next action</th></tr></thead>
+          <thead><tr><th>ID</th><th>Tenant/Lab</th><th>Client</th><th>Project</th><th>Matrix</th><th>Analyses</th><th>Status</th><th>Next action</th></tr></thead>
           <tbody>
           {{range .Samples}}
             <tr>
               <td><strong>{{.ID}}</strong></td>
+              <td>{{.TenantID}}/{{.LabID}}</td>
               <td>{{.ClientID}}</td>
               <td>{{.Project}}</td>
               <td>{{.Matrix}}</td>
@@ -71,7 +76,7 @@
               <td>{{template "transition" .}}</td>
             </tr>
           {{else}}
-            <tr><td colspan="7" class="empty">No samples yet. Create a client, then receive the first sample.</td></tr>
+            <tr><td colspan="8" class="empty">No samples yet. Create a client, then receive the first sample.</td></tr>
           {{end}}
           </tbody>
         </table>
@@ -82,13 +87,13 @@
       <section class="panel">
         <h2>Clients</h2>
         <ul class="list">
-          {{range .Clients}}<li><strong>{{.ID}}</strong><span>{{.Name}}</span><small>{{.Email}}</small></li>{{else}}<li class="empty">No clients yet.</li>{{end}}
+          {{range .Clients}}<li><strong>{{.ID}}</strong><span>{{.Name}}</span><small>{{.TenantID}}/{{.LabID}} • {{.Email}}</small></li>{{else}}<li class="empty">No clients yet.</li>{{end}}
         </ul>
       </section>
       <section class="panel" id="audit">
         <h2>Audit tail</h2>
         <ol class="audit">
-          {{range .Audit}}<li><span>#{{.Sequence}}</span><strong>{{.Action}}</strong><small>{{.Actor}} • {{.EntityID}}</small><code>{{slice .Hash 0 12}}</code></li>{{else}}<li class="empty">No audit events yet.</li>{{end}}
+          {{range .Audit}}<li><span>#{{.Sequence}}</span><strong>{{.Action}}</strong><small>{{.TenantID}}/{{.LabID}} • {{.Actor}} • {{.EntityID}}</small><code>{{slice .Hash 0 12}}</code></li>{{else}}<li class="empty">No audit events yet.</li>{{end}}
         </ol>
       </section>
     </section>
@@ -106,6 +111,8 @@
   {{if eq .Status "in_review"}}{{$next = "released"}}{{end}}
   {{if $next}}
     <form class="inline" method="post" action="/api/samples/{{.ID}}/transition">
+      <input type="hidden" name="tenant_id" value="{{.TenantID}}">
+      <input type="hidden" name="lab_id" value="{{.LabID}}">
       <input type="hidden" name="actor" value="lab-dev">
       <input type="hidden" name="status" value="{{$next}}">
       <button>Move to {{$next}}</button>
