@@ -527,7 +527,26 @@ func (a *app) createSample(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	input := lab.CreateSampleInput{ClientID: r.FormValue("client_id"), Project: r.FormValue("project"), Matrix: r.FormValue("matrix"), Tests: splitTests(r.FormValue("tests"))}
+	input := lab.CreateSampleInput{
+		ClientID:            r.FormValue("client_id"),
+		ProjectID:           r.FormValue("project_id"),
+		Project:             r.FormValue("project"),
+		ClientSampleID:      r.FormValue("client_sample_id"),
+		LabSampleID:         r.FormValue("lab_sample_id"),
+		Matrix:              r.FormValue("matrix"),
+		MatrixReferenceID:   r.FormValue("matrix_reference_id"),
+		ContainerID:         r.FormValue("container_id"),
+		PreservativeID:      r.FormValue("preservative_id"),
+		StorageLocationID:   r.FormValue("storage_location_id"),
+		ReceivedConditionID: r.FormValue("received_condition_id"),
+		SampledAt:           parseOptionalRequestTime(r.FormValue("sampled_at")),
+		ReceivedAt:          parseOptionalRequestTime(r.FormValue("received_at")),
+		Priority:            lab.SamplePriority(r.FormValue("priority")),
+		Comments:            r.FormValue("comments"),
+		AnalysisProfileIDs:  splitIDs(r.Form["analysis_profile_ids"]),
+		AnalysisServiceIDs:  splitIDs(r.Form["analysis_service_ids"]),
+		Tests:               splitTests(r.FormValue("tests")),
+	}
 	sample, err := a.store.CreateSampleForScope(scopeFromRequest(r), input, actor(r))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -709,6 +728,19 @@ func splitTests(raw string) []string {
 		}
 	}
 	return out
+}
+
+func parseOptionalRequestTime(raw string) time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04", "2006-01-02"} {
+		if parsed, err := time.Parse(layout, raw); err == nil {
+			return parsed.UTC()
+		}
+	}
+	return time.Time{}
 }
 
 func demoResetActor(r *http.Request) lab.ActorContext {

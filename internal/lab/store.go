@@ -69,6 +69,8 @@ type Analysis struct {
 	TenantID               string `json:"tenant_id,omitempty"`
 	LabID                  string `json:"lab_id,omitempty"`
 	Name                   string `json:"name"`
+	ServiceID              string `json:"service_id,omitempty"`
+	ProfileID              string `json:"profile_id,omitempty"`
 	Method                 string `json:"method,omitempty"`
 	Result                 string `json:"result,omitempty"`
 	Units                  string `json:"units,omitempty"`
@@ -76,24 +78,57 @@ type Analysis struct {
 	CatalogSnapshotVersion int    `json:"catalog_snapshot_version,omitempty"`
 }
 
+type SamplePriority string
+
+const (
+	PriorityRoutine SamplePriority = "routine"
+	PriorityRush    SamplePriority = "rush"
+)
+
 type Sample struct {
-	ID        string       `json:"id"`
-	TenantID  string       `json:"tenant_id"`
-	LabID     string       `json:"lab_id"`
-	ClientID  string       `json:"client_id"`
-	Project   string       `json:"project"`
-	Matrix    string       `json:"matrix"`
-	Status    SampleStatus `json:"status"`
-	Analyses  []Analysis   `json:"analyses"`
-	CreatedAt time.Time    `json:"created_at"`
-	UpdatedAt time.Time    `json:"updated_at"`
+	ID                  string         `json:"id"`
+	TenantID            string         `json:"tenant_id"`
+	LabID               string         `json:"lab_id"`
+	ClientID            string         `json:"client_id"`
+	ProjectID           string         `json:"project_id,omitempty"`
+	Project             string         `json:"project"`
+	ClientSampleID      string         `json:"client_sample_id,omitempty"`
+	LabSampleID         string         `json:"lab_sample_id,omitempty"`
+	Matrix              string         `json:"matrix"`
+	MatrixReferenceID   string         `json:"matrix_reference_id,omitempty"`
+	ContainerID         string         `json:"container_id,omitempty"`
+	PreservativeID      string         `json:"preservative_id,omitempty"`
+	StorageLocationID   string         `json:"storage_location_id,omitempty"`
+	ReceivedConditionID string         `json:"received_condition_id,omitempty"`
+	SampledAt           time.Time      `json:"sampled_at,omitempty"`
+	ReceivedAt          time.Time      `json:"received_at,omitempty"`
+	Priority            SamplePriority `json:"priority"`
+	Comments            string         `json:"comments,omitempty"`
+	Status              SampleStatus   `json:"status"`
+	Analyses            []Analysis     `json:"analyses"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
 }
 
 type CreateSampleInput struct {
-	ClientID string   `json:"client_id"`
-	Project  string   `json:"project"`
-	Matrix   string   `json:"matrix"`
-	Tests    []string `json:"tests"`
+	ClientID            string         `json:"client_id"`
+	ProjectID           string         `json:"project_id"`
+	Project             string         `json:"project"`
+	ClientSampleID      string         `json:"client_sample_id"`
+	LabSampleID         string         `json:"lab_sample_id"`
+	Matrix              string         `json:"matrix"`
+	MatrixReferenceID   string         `json:"matrix_reference_id"`
+	ContainerID         string         `json:"container_id"`
+	PreservativeID      string         `json:"preservative_id"`
+	StorageLocationID   string         `json:"storage_location_id"`
+	ReceivedConditionID string         `json:"received_condition_id"`
+	SampledAt           time.Time      `json:"sampled_at"`
+	ReceivedAt          time.Time      `json:"received_at"`
+	Priority            SamplePriority `json:"priority"`
+	Comments            string         `json:"comments"`
+	AnalysisProfileIDs  []string       `json:"analysis_profile_ids"`
+	AnalysisServiceIDs  []string       `json:"analysis_service_ids"`
+	Tests               []string       `json:"tests"`
 }
 
 type AuditOutcome string
@@ -172,8 +207,20 @@ var sqliteMigrations = []string{
 		tenant_id TEXT NOT NULL,
 		lab_id TEXT NOT NULL,
 		client_id TEXT NOT NULL REFERENCES clients(id),
+		project_id TEXT NOT NULL DEFAULT '',
 		project TEXT NOT NULL CHECK (length(trim(project)) > 0),
+		client_sample_id TEXT NOT NULL DEFAULT '',
+		lab_sample_id TEXT NOT NULL DEFAULT '',
 		matrix TEXT NOT NULL,
+		matrix_reference_id TEXT NOT NULL DEFAULT '',
+		container_id TEXT NOT NULL DEFAULT '',
+		preservative_id TEXT NOT NULL DEFAULT '',
+		storage_location_id TEXT NOT NULL DEFAULT '',
+		received_condition_id TEXT NOT NULL DEFAULT '',
+		sampled_at TEXT NOT NULL DEFAULT '',
+		received_at TEXT NOT NULL DEFAULT '',
+		priority TEXT NOT NULL DEFAULT 'routine',
+		comments TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL,
 		analyses_json TEXT NOT NULL,
 		created_at TEXT NOT NULL,
@@ -344,6 +391,8 @@ var sqlitePostMigrationIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_clients_scope ON clients(tenant_id, lab_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_samples_scope ON samples(tenant_id, lab_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_samples_client_id ON samples(client_id);`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_samples_scope_client_sample_id ON samples(tenant_id, lab_id, client_id, client_sample_id) WHERE client_sample_id != '';`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_samples_scope_lab_sample_id ON samples(tenant_id, lab_id, lab_sample_id) WHERE lab_sample_id != '';`,
 	`CREATE INDEX IF NOT EXISTS idx_audit_events_sequence ON audit_events(sequence);`,
 	`CREATE INDEX IF NOT EXISTS idx_audit_events_scope ON audit_events(tenant_id, lab_id, sequence);`,
 	`CREATE INDEX IF NOT EXISTS idx_sites_scope_client_id ON sites(tenant_id, lab_id, client_id);`,
@@ -438,6 +487,26 @@ func (s *Store) migrateV1AuditSchema(ctx context.Context) error {
 	if !sampleColumns["lab_id"] {
 		if _, err := s.db.ExecContext(ctx, `ALTER TABLE samples ADD COLUMN lab_id TEXT NOT NULL DEFAULT '`+DefaultLabID+`'`); err != nil {
 			return err
+		}
+	}
+	for _, column := range []struct{ name, ddl string }{
+		{"project_id", `project_id TEXT NOT NULL DEFAULT ''`},
+		{"client_sample_id", `client_sample_id TEXT NOT NULL DEFAULT ''`},
+		{"lab_sample_id", `lab_sample_id TEXT NOT NULL DEFAULT ''`},
+		{"matrix_reference_id", `matrix_reference_id TEXT NOT NULL DEFAULT ''`},
+		{"container_id", `container_id TEXT NOT NULL DEFAULT ''`},
+		{"preservative_id", `preservative_id TEXT NOT NULL DEFAULT ''`},
+		{"storage_location_id", `storage_location_id TEXT NOT NULL DEFAULT ''`},
+		{"received_condition_id", `received_condition_id TEXT NOT NULL DEFAULT ''`},
+		{"sampled_at", `sampled_at TEXT NOT NULL DEFAULT ''`},
+		{"received_at", `received_at TEXT NOT NULL DEFAULT ''`},
+		{"priority", `priority TEXT NOT NULL DEFAULT 'routine'`},
+		{"comments", `comments TEXT NOT NULL DEFAULT ''`},
+	} {
+		if !sampleColumns[column.name] {
+			if _, err := s.db.ExecContext(ctx, `ALTER TABLE samples ADD COLUMN `+column.ddl); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -641,11 +710,9 @@ func (s *Store) CreateSampleForScope(scope Scope, input CreateSampleInput, actor
 	if err != nil {
 		return Sample{}, err
 	}
-	if strings.TrimSpace(input.Project) == "" {
-		return Sample{}, errors.New("project is required")
-	}
-	if len(input.Tests) == 0 {
-		return Sample{}, errors.New("at least one analysis is required")
+	input.ClientID = strings.TrimSpace(input.ClientID)
+	if input.ClientID == "" {
+		return Sample{}, errors.New("client id is required")
 	}
 	now := time.Now().UTC()
 	var sample Sample
@@ -669,6 +736,30 @@ func (s *Store) CreateSampleForScope(scope Scope, input CreateSampleInput, actor
 		if clientTenant != scope.TenantID || clientLab != scope.LabID {
 			return fmt.Errorf("client %q is outside requested tenant/lab scope", input.ClientID)
 		}
+		if clientSampleID := strings.TrimSpace(input.ClientSampleID); clientSampleID != "" {
+			var exists int
+			err := tx.QueryRow(`SELECT 1 FROM samples WHERE tenant_id = ? AND lab_id = ? AND client_id = ? AND client_sample_id = ?`, scope.TenantID, scope.LabID, input.ClientID, clientSampleID).Scan(&exists)
+			if err == nil {
+				return fmt.Errorf("client sample id %q already exists for client %q", clientSampleID, input.ClientID)
+			}
+			if !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+		}
+		if labSampleID := strings.TrimSpace(input.LabSampleID); labSampleID != "" {
+			var exists int
+			err := tx.QueryRow(`SELECT 1 FROM samples WHERE tenant_id = ? AND lab_id = ? AND lab_sample_id = ?`, scope.TenantID, scope.LabID, labSampleID).Scan(&exists)
+			if err == nil {
+				return fmt.Errorf("lab sample id %q already exists", labSampleID)
+			}
+			if !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+		}
+		resolved, err := resolveSampleIntakeTx(tx, scope, input)
+		if err != nil {
+			return err
+		}
 		next, err := nextCounter(tx, "next_sample")
 		if err != nil {
 			return err
@@ -678,31 +769,19 @@ func (s *Store) CreateSampleForScope(scope Scope, input CreateSampleInput, actor
 		if err != nil {
 			return err
 		}
-		analyses := make([]Analysis, 0, len(input.Tests))
-		for i, test := range input.Tests {
-			test = strings.TrimSpace(test)
-			if test == "" {
-				continue
-			}
-			analysis := Analysis{ID: fmt.Sprintf("%s-A%02d", sampleID, i+1), TenantID: scope.TenantID, LabID: scope.LabID, Name: test}
-			if hasSnapshot {
-				analysis.CatalogSnapshotID = snapshot.ID
-				analysis.CatalogSnapshotVersion = snapshot.Version
-			}
-			analyses = append(analyses, analysis)
+		analyses, err := buildAnalysesTx(tx, scope, sampleID, input, resolved.Tests, snapshot, hasSnapshot)
+		if err != nil {
+			return err
 		}
-		if len(analyses) == 0 {
-			return errors.New("at least one non-empty analysis is required")
-		}
-		sample = Sample{ID: sampleID, TenantID: scope.TenantID, LabID: scope.LabID, ClientID: input.ClientID, Project: strings.TrimSpace(input.Project), Matrix: strings.TrimSpace(input.Matrix), Status: StatusReceived, Analyses: analyses, CreatedAt: now, UpdatedAt: now}
+		sample = Sample{ID: sampleID, TenantID: scope.TenantID, LabID: scope.LabID, ClientID: input.ClientID, ProjectID: resolved.ProjectID, Project: resolved.Project, ClientSampleID: strings.TrimSpace(input.ClientSampleID), LabSampleID: strings.TrimSpace(input.LabSampleID), Matrix: resolved.Matrix, MatrixReferenceID: resolved.MatrixReferenceID, ContainerID: resolved.ContainerID, PreservativeID: resolved.PreservativeID, StorageLocationID: resolved.StorageLocationID, ReceivedConditionID: resolved.ReceivedConditionID, SampledAt: input.SampledAt.UTC(), ReceivedAt: input.ReceivedAt.UTC(), Priority: normalizePriority(input.Priority), Comments: strings.TrimSpace(input.Comments), Status: StatusReceived, Analyses: analyses, CreatedAt: now, UpdatedAt: now}
 		encodedAnalyses, err := json.Marshal(sample.Analyses)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO samples(id, tenant_id, lab_id, client_id, project, matrix, status, analyses_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sample.ID, sample.TenantID, sample.LabID, sample.ClientID, sample.Project, sample.Matrix, string(sample.Status), string(encodedAnalyses), formatTime(sample.CreatedAt), formatTime(sample.UpdatedAt)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO samples(id, tenant_id, lab_id, client_id, project_id, project, client_sample_id, lab_sample_id, matrix, matrix_reference_id, container_id, preservative_id, storage_location_id, received_condition_id, sampled_at, received_at, priority, comments, status, analyses_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sample.ID, sample.TenantID, sample.LabID, sample.ClientID, sample.ProjectID, sample.Project, sample.ClientSampleID, sample.LabSampleID, sample.Matrix, sample.MatrixReferenceID, sample.ContainerID, sample.PreservativeID, sample.StorageLocationID, sample.ReceivedConditionID, formatOptionalTime(sample.SampledAt), formatOptionalTime(sample.ReceivedAt), string(sample.Priority), sample.Comments, string(sample.Status), string(encodedAnalyses), formatTime(sample.CreatedAt), formatTime(sample.UpdatedAt)); err != nil {
 			return err
 		}
-		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "sample.created", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "sample", ID: sample.ID}, Details: map[string]any{"client_id": sample.ClientID, "analysis_count": len(sample.Analyses)}})
+		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "sample.created", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "sample", ID: sample.ID}, Details: map[string]any{"client_id": sample.ClientID, "project_id": sample.ProjectID, "client_sample_id": sample.ClientSampleID, "lab_sample_id": sample.LabSampleID, "analysis_count": len(sample.Analyses)}})
 	})
 	if err != nil {
 		return Sample{}, err
@@ -815,7 +894,7 @@ func (s *Store) SamplesForScope(scope Scope) []Sample {
 	if err != nil {
 		return nil
 	}
-	rows, err := s.db.Query(`SELECT id, tenant_id, lab_id, client_id, project, matrix, status, analyses_json, created_at, updated_at FROM samples WHERE tenant_id = ? AND lab_id = ? ORDER BY id`, scope.TenantID, scope.LabID)
+	rows, err := s.db.Query(sampleSelectSQL+` FROM samples WHERE tenant_id = ? AND lab_id = ? ORDER BY id`, scope.TenantID, scope.LabID)
 	if err != nil {
 		return nil
 	}
@@ -1114,20 +1193,25 @@ func (s *Store) latestCheckpoint() (AuditCheckpoint, bool, error) {
 
 type sampleScanner interface{ Scan(dest ...any) error }
 
+const sampleSelectSQL = `SELECT id, tenant_id, lab_id, client_id, project_id, project, client_sample_id, lab_sample_id, matrix, matrix_reference_id, container_id, preservative_id, storage_location_id, received_condition_id, sampled_at, received_at, priority, comments, status, analyses_json, created_at, updated_at`
+
 func sampleByID(db *sql.DB, id string) (Sample, error) {
-	return sampleByIDScanner(db.QueryRow(`SELECT id, tenant_id, lab_id, client_id, project, matrix, status, analyses_json, created_at, updated_at FROM samples WHERE id = ?`, id))
+	return sampleByIDScanner(db.QueryRow(sampleSelectSQL+` FROM samples WHERE id = ?`, id))
 }
 func sampleByIDTx(tx *sql.Tx, id string) (Sample, error) {
-	return sampleByIDScanner(tx.QueryRow(`SELECT id, tenant_id, lab_id, client_id, project, matrix, status, analyses_json, created_at, updated_at FROM samples WHERE id = ?`, id))
+	return sampleByIDScanner(tx.QueryRow(sampleSelectSQL+` FROM samples WHERE id = ?`, id))
 }
 
 func sampleByIDScanner(row sampleScanner) (Sample, error) {
 	var sample Sample
-	var status, analysesJSON, created, updated string
-	if err := row.Scan(&sample.ID, &sample.TenantID, &sample.LabID, &sample.ClientID, &sample.Project, &sample.Matrix, &status, &analysesJSON, &created, &updated); err != nil {
+	var status, analysesJSON, priority, sampledAt, receivedAt, created, updated string
+	if err := row.Scan(&sample.ID, &sample.TenantID, &sample.LabID, &sample.ClientID, &sample.ProjectID, &sample.Project, &sample.ClientSampleID, &sample.LabSampleID, &sample.Matrix, &sample.MatrixReferenceID, &sample.ContainerID, &sample.PreservativeID, &sample.StorageLocationID, &sample.ReceivedConditionID, &sampledAt, &receivedAt, &priority, &sample.Comments, &status, &analysesJSON, &created, &updated); err != nil {
 		return Sample{}, err
 	}
 	sample.Status = SampleStatus(status)
+	sample.Priority = normalizePriority(SamplePriority(priority))
+	sample.SampledAt = parseOptionalTime(sampledAt)
+	sample.ReceivedAt = parseOptionalTime(receivedAt)
 	if err := json.Unmarshal([]byte(analysesJSON), &sample.Analyses); err != nil {
 		return Sample{}, err
 	}

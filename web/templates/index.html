@@ -110,9 +110,22 @@
           <option value="">Client…</option>
           {{range .Clients}}<option value="{{.ID}}">{{.Name}} ({{.ID}})</option>{{end}}
         </select>
-        <input name="project" placeholder="Project / COC reference" required>
-        <input name="matrix" placeholder="Matrix e.g. water, soil, air">
-        <textarea name="tests" placeholder="Analyses: pH, Turbidity, Lead" required></textarea>
+        <select name="project_id"><option value="">Project / work order…</option>{{range .Projects}}<option value="{{.ID}}">{{.Name}} • {{.WorkOrder}}</option>{{end}}</select>
+        <input name="project" placeholder="Project / COC reference (if no saved project)">
+        <input name="client_sample_id" placeholder="Client sample ID">
+        <input name="lab_sample_id" placeholder="Lab sample ID override (optional)">
+        <select name="matrix_reference_id"><option value="">Matrix from project/client defaults…</option>{{range .SampleReference}}<option value="{{.ID}}">{{.Kind}} • {{.Name}}</option>{{end}}</select>
+        <select name="container_id"><option value="">Container…</option>{{range .SampleReference}}<option value="{{.ID}}">{{.Kind}} • {{.Name}}</option>{{end}}</select>
+        <select name="preservative_id"><option value="">Preservative…</option>{{range .SampleReference}}<option value="{{.ID}}">{{.Kind}} • {{.Name}}</option>{{end}}</select>
+        <select name="storage_location_id"><option value="">Storage location…</option>{{range .SampleReference}}<option value="{{.ID}}">{{.Kind}} • {{.Name}}</option>{{end}}</select>
+        <select name="received_condition_id"><option value="">Received condition…</option>{{range .SampleReference}}<option value="{{.ID}}">{{.Kind}} • {{.Name}}</option>{{end}}</select>
+        <input name="sampled_at" placeholder="Sampled at (RFC3339 or YYYY-MM-DD)">
+        <input name="received_at" placeholder="Received at (RFC3339 or YYYY-MM-DD)">
+        <select name="priority"><option value="routine">Routine</option><option value="rush">Rush</option></select>
+        <select name="analysis_profile_ids"><option value="">Analysis profile…</option>{{range .Profiles}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+        <textarea name="analysis_service_ids" placeholder="Extra service IDs, comma/newline separated"></textarea>
+        <textarea name="tests" placeholder="Fallback analyses if no profile/service selected"></textarea>
+        <textarea name="comments" placeholder="Receiving comments"></textarea>
         <button>Receive sample</button>
       </form>
     </section>
@@ -229,7 +242,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Tenant/Lab</th><th>Client</th><th>Project</th><th>Matrix</th><th>Analyses</th><th>Status</th><th>Next action</th></tr></thead>
+          <thead><tr><th>ID</th><th>Tenant/Lab</th><th>Client</th><th>Project</th><th>Client/Lab IDs</th><th>Matrix</th><th>Priority</th><th>Analyses</th><th>Status</th><th>Next action</th></tr></thead>
           <tbody>
           {{range .Samples}}
             <tr>
@@ -237,13 +250,15 @@
               <td>{{.TenantID}}/{{.LabID}}</td>
               <td>{{.ClientID}}</td>
               <td>{{.Project}}</td>
+              <td>{{.ClientSampleID}} / {{.LabSampleID}}</td>
               <td>{{.Matrix}}</td>
+              <td>{{.Priority}}</td>
               <td>{{len .Analyses}}</td>
               <td><span class="status {{.Status}}">{{.Status}}</span></td>
               <td>{{template "transition" .}}</td>
             </tr>
           {{else}}
-            <tr><td colspan="8" class="empty">No samples yet. Create a client, then receive the first sample.</td></tr>
+            <tr><td colspan="10" class="empty">No samples yet. Create a client, then receive the first sample.</td></tr>
           {{end}}
           </tbody>
         </table>
