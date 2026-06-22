@@ -6,7 +6,7 @@ source_task: t_a795c506
 productionization_task: t_1b900f7e
 review_date: 2026-06-22
 source_commit: 908e51a582c0435aeeba4b919e3b1770715b4da9
-validated_checkout_commit: 1fefae0f50117390baedee01d36e07e92c7ebb63
+validated_checkout_commit: d69c6bd67099c4e9d478cade51325749644e9078
 ---
 
 # PSC-MVP-001 Productionization Review Packet
@@ -17,7 +17,7 @@ This packet surfaces the MVP acceptance contract and operator demo script for Pe
 
 - Contract: `docs/mvp-acceptance-contract-demo-script.md`
 - Source review commit: `908e51a582c0435aeeba4b919e3b1770715b4da9` (`docs: add MVP acceptance contract`)
-- Current validated checkout: `1fefae0f50117390baedee01d36e07e92c7ebb63`
+- Current validated checkout: `d69c6bd67099c4e9d478cade51325749644e9078`
 - Existing repo links:
   - `README.md` links to `docs/mvp-acceptance-contract-demo-script.md`
   - `docs/mvp-test-scope.md` links to `docs/mvp-acceptance-contract-demo-script.md`
@@ -69,16 +69,21 @@ Validation artifacts were written under `.hermes-validation/t_1b900f7e/`.
 | --- | --- | --- | --- |
 | Contract scan | Python scan of `docs/mvp-acceptance-contract-demo-script.md` | PASS | Required commands, stages, guardrails present. |
 | Link resolution | README + `docs/mvp-test-scope.md` link scan | PASS | Both links resolve to the contract file. |
-| Go tests | `go test ./...` | FAIL | Current checkout has audit/actor-context test expectations ahead of implementation: missing `AuditEvent.ActorContext`, `AuditEvent.TenantID`, `ValidateAuditEvent`, `DefaultTenantID`; untracked `internal/lab/actor_context_test.go` also compiles against future API. |
-| Go vet | `go vet ./...` | FAIL | Same current-checkout compile/API mismatch as tests. |
+| Go tests | `go test ./...` | PASS | Final Friday review at `d69c6bd67099c4e9d478cade51325749644e9078`; all packages passed. |
+| Go vet | `go vet ./...` | PASS | Final Friday review at `d69c6bd67099c4e9d478cade51325749644e9078`; no vet findings. |
+| Docker compose config | `docker compose config --quiet` | PASS | Compose file validates. |
 | Docker/HTTP smoke | `make docker-smoke` | PASS | Built local Docker app, `/healthz` returned `ok`, `dev-seed` seeded synthetic data, smoke found `Clearline Synthetic Lab`. |
-| Cleanup | `make dev-down`; forced removal of stale `project-scientist-*` test container | PASS | Final `docker ps -a --filter name=project-scientist` returned empty. |
+| Cleanup | `make dev-down`; forced removal of lingering `project-scientist-*` containers | PASS | Final `docker ps -a --filter name=project-scientist` returned empty. |
+
+Validation logs:
+
+- `.hermes-validation/t_1b900f7e/final-review/final-review-validation.log`
+- `.hermes-validation/t_1b900f7e/final-review/final-cleanup.log`
 
 ## Remaining gates
 
-1. Current branch test/vet failures must be resolved before this repo can claim green engineering gates. The failures are outside the MVP-001 document itself but block overall acceptance.
-2. The canonical `make mvp-*` commands are specified by the contract; they are not yet implemented in the current Makefile. The bootstrap commands remain `make dev-reset`, `make dev-up`, `make dev-seed`, and `make docker-smoke`.
-3. This packet is internal review evidence only. No customer/prod deployment, external exposure, client data, DNS/auth/security/billing changes, or production-readiness claim is authorized.
+1. The canonical `make mvp-*` commands are specified by the contract; implementation is intentionally deferred to PSC-MVP-004 / `t_28171cbe`. The bootstrap commands remain `make dev-reset`, `make dev-up`, `make dev-seed`, and `make docker-smoke`.
+2. This packet is internal review evidence only. No customer/prod deployment, external exposure, client data, DNS/auth/security/billing changes, or production-readiness claim is authorized.
 
 ## Accepted language
 
