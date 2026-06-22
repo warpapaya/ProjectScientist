@@ -310,8 +310,22 @@ var sqliteMigrations = []string{
 		sort_order INTEGER NOT NULL,
 		PRIMARY KEY(profile_id, service_id)
 	);`,
-	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('last_hash', '');`,
-	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
+	`CREATE TABLE IF NOT EXISTS sample_reference_items (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		kind TEXT NOT NULL CHECK (kind IN ('matrix','container','preservative','storage_location','received_condition')),
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		code TEXT NOT NULL DEFAULT '',
+		description TEXT NOT NULL DEFAULT '',
+		sort_order INTEGER NOT NULL DEFAULT 0,
+		active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		UNIQUE(tenant_id, lab_id, kind, code)
+	);`,
+	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('last_hash', '');`,
+	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (5, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
 }
 
 var sqlitePostMigrationIndexes = []string{
@@ -330,6 +344,7 @@ var sqlitePostMigrationIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_catalog_analytes_scope ON catalog_analytes(tenant_id, lab_id, name);`,
 	`CREATE INDEX IF NOT EXISTS idx_analysis_services_scope_order ON analysis_services(tenant_id, lab_id, department_id, sort_order, name);`,
 	`CREATE INDEX IF NOT EXISTS idx_analysis_profile_services_order ON analysis_profile_services(profile_id, sort_order);`,
+	`CREATE INDEX IF NOT EXISTS idx_sample_reference_scope_kind_order ON sample_reference_items(tenant_id, lab_id, kind, active, sort_order, name);`,
 }
 
 func OpenStore(statePath, _ string) (*Store, error) { return OpenSQLiteStore(statePath) }

@@ -79,6 +79,12 @@ func TestResetAndSeedSyntheticDemoIsDeterministicAndFixtureBacked(t *testing.T) 
 	if len(samples[0].Analyses) != 4 {
 		t.Fatalf("expected fixture analytes to expand to four analyses, got %#v", samples[0].Analyses)
 	}
+	if first.SampleReferenceCount == 0 || second.SampleReferenceCount != first.SampleReferenceCount {
+		t.Fatalf("demo reset should seed stable sample reference vocabulary counts, first=%#v second=%#v", first, second)
+	}
+	if names := sampleReferenceNames(store.SampleReferenceItems(SampleReferenceMatrix)); !containsAll(names, []string{"Drinking Water", "Wastewater", "Soil"}) {
+		t.Fatalf("demo reset missing seeded matrix reference data: %v", names)
+	}
 }
 
 func assertDemoSeedSummary(t *testing.T, summary SyntheticDemoSeedSummary) {
