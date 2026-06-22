@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"html/template"
 	"log"
 	"net/http"
@@ -72,8 +73,12 @@ func (a *app) demoReset(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	summary, err := a.store.ResetAndSeedSyntheticDemo(a.fixturePath, actor(r))
+	summary, err := a.store.ResetAndSeedSyntheticDemo(a.fixturePath, demoResetActor(r))
 	if err != nil {
+		if errors.Is(err, lab.ErrAuthorizationDenied) {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -147,19 +152,38 @@ func splitTests(raw string) []string {
 	return out
 }
 
+func demoResetActor(r *http.Request) lab.ActorContext {
+	requestID := requestID(r)
+	return lab.MustActorContext(lab.ActorContextInput{
+		UserID:            "local-demo-reset-admin",
+		DisplayName:       "local-demo-reset-admin",
+		AuthProvider:      "local-dev-demo-reset",
+		RequestID:         requestID,
+		CorrelationID:     requestID,
+		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleAdmin)}}},
+		Roles:             []string{string(lab.RoleAdmin)},
+	})
+}
+
 func actor(r *http.Request) lab.ActorContext {
-	requestID := strings.TrimSpace(r.Header.Get("X-PSC-Request-ID"))
-	if requestID == "" {
-		requestID = "local-http-request"
-	}
+	requestID := requestID(r)
 	return lab.MustActorContext(lab.ActorContextInput{
 		UserID:            "lab-dev",
 		DisplayName:       "lab-dev",
 		AuthProvider:      "local-dev",
 		RequestID:         requestID,
 		CorrelationID:     requestID,
-		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID}},
+		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser)}}},
+		Roles:             []string{string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser)},
 	})
+}
+
+func requestID(r *http.Request) string {
+	requestID := strings.TrimSpace(r.Header.Get("X-PSC-Request-ID"))
+	if requestID == "" {
+		requestID = "local-http-request"
+	}
+	return requestID
 }
 
 func wantsJSON(r *http.Request) bool {

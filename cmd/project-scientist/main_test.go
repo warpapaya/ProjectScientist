@@ -152,6 +152,13 @@ func TestDemoResetEndpointSeedsFixtureAndIsRerunnable(t *testing.T) {
 	if got := len(store.Samples()); got != 1 {
 		t.Fatalf("expected rerun to leave one sample, got %d", got)
 	}
+	events, err := store.AuditEvents(0)
+	if err != nil {
+		t.Fatalf("audit events: %v", err)
+	}
+	if len(events) == 0 || events[len(events)-1].ActorContext.UserID != "local-demo-reset-admin" {
+		t.Fatalf("expected demo reset to use local admin actor, got %#v", events)
+	}
 }
 
 func TestDemoResetEndpointIsDisabledUnlessExplicitlyEnabled(t *testing.T) {
