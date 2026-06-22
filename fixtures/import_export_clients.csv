@@ -1,0 +1,3 @@
+id,name,email,tenant_id,lab_id
+C-00001,Alpha Environmental,alpha@example.test,lab-test,default-lab
+C-00002,Beta Labs,beta@example.test,lab-test,default-lab
