@@ -78,6 +78,25 @@ func (s *Store) AnalysisRequestLinesForSampleForScope(scope Scope, sampleID stri
 	return lines
 }
 
+func (s *Store) AnalysisRequestLinesForScope(scope Scope) []AnalysisRequestLine {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return nil
+	}
+	rows, err := s.db.Query(analysisRequestLineSelect+` FROM analysis_request_lines WHERE tenant_id = ? AND lab_id = ? ORDER BY department_name, method_name, sample_id, id`, scope.TenantID, scope.LabID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	lines, err := scanAnalysisRequestLines(rows)
+	if err != nil {
+		return nil
+	}
+	return lines
+}
+
 func (s *Store) GetAnalysisRequestLine(id string) (AnalysisRequestLine, bool) {
 	return s.GetAnalysisRequestLineForScope(defaultScope(), id)
 }
