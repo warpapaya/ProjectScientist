@@ -71,11 +71,27 @@ SENAITE commonly models QC through sample types, analysis/request relationships,
 - Analysis-line linkage allows future analyte-specific recovery/RPD/blank checks.
 - Batch linkage is a string placeholder until worksheet/batch entities are promoted into the domain model.
 
+## QC batch acceptance model
+
+PSC-RM-051 promotes QC batch composition into explicit scoped objects:
+
+- `qc_batches`: method/matrix batch header with status `open`, `in_review`, `accepted`, or `rejected`.
+- `qc_items`: ordered batch membership for production/client samples and QC samples, with QC items carrying a controlled taxonomy kind.
+- `qc_relationships`: links a QC item to an affected production sample and/or analysis request line using the controlled relationship types above.
+
+Lab-test v1 workflow rules:
+
+1. New batches start `open`.
+2. Items and relationships can be added only while the batch is `open`.
+3. `open` batches may move to `in_review` only after at least one QC item has a relationship.
+4. `in_review` batches may move to `accepted` or `rejected`; both terminal decisions require a reason.
+5. Rejected batches may be reopened for correction; accepted batches are terminal in v1.
+6. Creation, composition, relationship, and status changes emit append-only audit events with identifiers only.
+
 ## Downstream implementation tasks
 
-1. Promote worksheet/batch/run entities and replace free-form `batch_id` with a scoped foreign key.
+1. Replace any remaining free-form `batch_id` compatibility fields with the scoped QC batch identifier where callers can provide it safely.
 2. Add QC limit/rule definitions by method, matrix, analyte, and QC kind.
 3. Compute blank contamination, duplicate RPD, spike/LCS recovery, and calibration pass/fail flags.
-4. Add QC review decisions and batch acceptance/rejection workflow with audit events.
-5. Block report release when required QC relationships/rules fail or are unreviewed.
-6. Surface QC summaries and exceptions in result review and COA/report artifact generation.
+4. Block report release when required QC relationships/rules fail or are unreviewed.
+5. Surface QC summaries and exceptions in result review and COA/report artifact generation.
