@@ -24,6 +24,13 @@ make dev-up
 open http://127.0.0.1:8097
 ```
 
+The Docker workflow derives a clone/worktree-specific Compose project name by default (`project-scientist-<repo-dir>`). For concurrent local clones or Kanban workers, override the project and loopback port explicitly:
+
+```bash
+make dev-up COMPOSE_PROJECT_NAME=project-scientist-$USER-1 DEV_PORT=18097
+open http://127.0.0.1:18097
+```
+
 Health check:
 
 ```bash
@@ -39,6 +46,8 @@ make vet
 make docker-test
 make docker-smoke
 ```
+
+`make docker-test` uses an isolated `<COMPOSE_PROJECT_NAME>-test` Compose project and clone-specific default image tags, then cleans the Compose project up on exit. `make docker-smoke` starts the dev container, verifies the seeded API state, then stops the container so normal pass/fail runs do not leave a running smoke container behind.
 
 Seed/reset deterministic synthetic local-only data through the running dev API:
 

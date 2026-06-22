@@ -12,13 +12,17 @@ This work hardens local development, Docker repeatability, and CI candidate gate
   - Pinned Go and Alpine base images by digest.
   - Named the runtime stage `runtime` and kept `test` as the container test stage.
   - Added CGO-capable build/test toolchain (`gcc`, `musl-dev`) because the current storage lane uses `github.com/mattn/go-sqlite3`.
+  - Pre-downloads Go modules before source copy and caps Docker build/test package parallelism with `GOFLAGS=-p=<DOCKER_GO_PARALLEL>` plus `GOMAXPROCS` to reduce local CGO/sqlite compile pressure.
   - Builds a static stripped Linux binary and copies only the binary/web assets into the runtime image.
   - Preserves non-root runtime user, `/data` volume path, and `/healthz` health check.
 - `docker-compose.yml`
-  - Added deterministic Compose project name, local image tags, runtime target, loopback-only port binding, named dev volume, and service health check.
+  - Added env-overridable Compose project name, local image tags, runtime target, loopback-only port binding, named dev volume, build parallelism args, and service health check.
+  - Removed fixed `container_name`; Compose now scopes service/container/network/volume names by project.
 - `Makefile`
   - Added aggregate `ci`, `docker-build`, `docker-smoke`, `image-review`, `dev-reset`, and `dev-seed` targets.
-  - `docker-smoke` starts the container, waits for health, seeds synthetic demo data through the local API, and verifies `/api/state`.
+  - Added `COMPOSE_PROJECT_NAME`, `DEV_PORT`, image tag, and `DOCKER_GO_PARALLEL` overrides. Default `COMPOSE_PROJECT_NAME` derives from the repo/worktree directory.
+  - `docker-test` runs under `<COMPOSE_PROJECT_NAME>-test` and cleans the test project on exit.
+  - `docker-smoke` starts the container, waits for health, seeds synthetic demo data through the local API, verifies `/api/state`, and stops the Compose project on exit.
 - `scripts/wait-health.sh`
   - Bounded health polling for `make dev-up` instead of a single race-prone curl.
 - `scripts/dev-seed.sh`
@@ -30,7 +34,7 @@ This work hardens local development, Docker repeatability, and CI candidate gate
 
 ## Verification evidence
 
-Commands run from `/Users/citadel/Projects/ProjectScientist`:
+Commands run from `/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_f8ce13cf/verify-psc-rm-006`:
 
 ```bash
 make fmt-check
@@ -38,6 +42,12 @@ make test
 make vet
 docker compose config --quiet
 make docker-test
+make docker-test
+make dev-reset && make docker-smoke && make dev-down
+make image-review
+docker ps -a --filter label=com.docker.compose.project=project-scientist-verify-psc-rm-006
+
+docker ps -a --filter label=com.docker.compose.project=project-scientist-verify-psc-rm-006-test
 ```
 
 Result: passed.
@@ -49,28 +59,14 @@ go test -mod=readonly ./...
 ?    github.com/warpapaya/ProjectScientist/cmd/project-scientist [no test files]
 ok   github.com/warpapaya/ProjectScientist/internal/lab (cached)
 go vet ./...
-docker compose run --build --rm project-scientist-test
-ok   github.com/warpapaya/ProjectScientist/internal/lab 0.045s
-```
-
-Docker/HTTP smoke and image review:
-
-```bash
-make dev-reset
-make docker-smoke
-make image-review
-make dev-down
-```
-
-Result: passed.
-
-Observed summary:
-
-```text
+project-scientist-verify-psc-rm-006-test project built and removed twice
+ok   github.com/warpapaya/ProjectScientist/internal/lab 0.032s
+ok   github.com/warpapaya/ProjectScientist/internal/lab 0.033s
 ok
-seeded synthetic client C-00002 and sample data at http://127.0.0.1:8097
+seeded synthetic client C-00001 and sample data at http://127.0.0.1:8097
 docker smoke ok
-Image=[project-scientist:dev-local] Size=8246032 User=scientist Entrypoint=[] Cmd=[/app/project-scientist]
+Image=[project-scientist:dev-local] Size=8246038 User=scientist Entrypoint=[] Cmd=[/app/project-scientist]
+cleanup proof: no containers for project-scientist-verify-psc-rm-006 or project-scientist-verify-psc-rm-006-test; name filter also empty
 ```
 
 ## Dependency review

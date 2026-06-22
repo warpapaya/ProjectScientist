@@ -1,14 +1,15 @@
-name: project-scientist
+name: ${COMPOSE_PROJECT_NAME:-project-scientist}
 
 services:
   project-scientist:
     build:
       context: .
       target: runtime
-    image: project-scientist:dev-local
-    container_name: project-scientist-dev
+      args:
+        GO_PARALLEL: ${PSC_DOCKER_GO_PARALLEL:-2}
+    image: ${PSC_IMAGE_TAG:-project-scientist:dev-local}
     ports:
-      - "127.0.0.1:8097:8080"
+      - "127.0.0.1:${PSC_DEV_PORT:-8097}:8080"
     environment:
       PSC_ADDR: ":8080"
       PSC_DATA_DIR: "/data"
@@ -27,7 +28,9 @@ services:
     build:
       context: .
       target: test
-    image: project-scientist:test-local
+      args:
+        GO_PARALLEL: ${PSC_DOCKER_GO_PARALLEL:-2}
+    image: ${PSC_TEST_IMAGE_TAG:-project-scientist:test-local}
     profiles:
       - test
 
