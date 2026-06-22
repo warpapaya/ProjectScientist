@@ -13,6 +13,7 @@ RUN apk add --no-cache gcc musl-dev
 WORKDIR /src
 COPY go.* ./
 COPY cmd ./cmd
+COPY fixtures ./fixtures
 COPY internal ./internal
 CMD ["go", "test", "-mod=readonly", "./..."]
 
