@@ -1,0 +1,16 @@
+[
+  {
+    "email": "alpha@example.test",
+    "id": "C-00001",
+    "lab_id": "default-lab",
+    "name": "Alpha Environmental",
+    "tenant_id": "lab-test"
+  },
+  {
+    "email": "beta@example.test",
+    "id": "C-00002",
+    "lab_id": "default-lab",
+    "name": "Beta Labs",
+    "tenant_id": "lab-test"
+  }
+]
