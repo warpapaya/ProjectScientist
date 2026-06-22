@@ -39,6 +39,68 @@
         <button>Create client</button>
       </form>
 
+      <form class="panel form" method="post" action="/api/sites">
+        <h2>New site / division</h2>
+        <input type="hidden" name="tenant_id" value="{{.Scope.TenantID}}">
+        <input type="hidden" name="lab_id" value="{{.Scope.LabID}}">
+        <input name="actor" value="lab-dev" aria-label="Actor">
+        <select name="client_id" required><option value="">Client…</option>{{range .Clients}}<option value="{{.ID}}">{{.Name}} ({{.ID}})</option>{{end}}</select>
+        <input name="name" placeholder="Site / division name" required>
+        <input name="division" placeholder="Division e.g. water, metals">
+        <input name="address" placeholder="Address">
+        <button>Create site</button>
+      </form>
+
+      <form class="panel form" method="post" action="/api/contacts">
+        <h2>New contact</h2>
+        <input type="hidden" name="tenant_id" value="{{.Scope.TenantID}}">
+        <input type="hidden" name="lab_id" value="{{.Scope.LabID}}">
+        <input name="actor" value="lab-dev" aria-label="Actor">
+        <select name="client_id" required><option value="">Client…</option>{{range .Clients}}<option value="{{.ID}}">{{.Name}} ({{.ID}})</option>{{end}}</select>
+        <select name="site_id"><option value="">Site optional…</option>{{range .Sites}}<option value="{{.ID}}">{{.Name}} ({{.ID}})</option>{{end}}</select>
+        <input name="name" placeholder="Contact name" required>
+        <input name="email" placeholder="Email">
+        <input name="phone" placeholder="Phone">
+        <button>Create contact</button>
+      </form>
+
+      <form class="panel form" method="post" action="/api/contact-roles">
+        <h2>Contact role</h2>
+        <input type="hidden" name="tenant_id" value="{{.Scope.TenantID}}">
+        <input type="hidden" name="lab_id" value="{{.Scope.LabID}}">
+        <input name="actor" value="lab-dev" aria-label="Actor">
+        <select name="contact_id" required><option value="">Contact…</option>{{range .Contacts}}<option value="{{.ID}}">{{.Name}} ({{.ID}})</option>{{end}}</select>
+        <input name="role" placeholder="report_reviewer, billing, sampler" required>
+        <button>Assign role</button>
+      </form>
+
+      <form class="panel form" method="post" action="/api/projects">
+        <h2>New project / work order</h2>
+        <input type="hidden" name="tenant_id" value="{{.Scope.TenantID}}">
+        <input type="hidden" name="lab_id" value="{{.Scope.LabID}}">
+        <input name="actor" value="lab-dev" aria-label="Actor">
+        <select name="client_id" required><option value="">Client…</option>{{range .Clients}}<option value="{{.ID}}">{{.Name}} ({{.ID}})</option>{{end}}</select>
+        <select name="site_id"><option value="">Site optional…</option>{{range .Sites}}<option value="{{.ID}}">{{.Name}} ({{.ID}})</option>{{end}}</select>
+        <input name="name" placeholder="Project name" required>
+        <input name="work_order" placeholder="Work order / PO">
+        <input name="default_matrix" placeholder="Default matrix">
+        <textarea name="default_tests" placeholder="Default analyses: pH, Turbidity"></textarea>
+        <button>Create project</button>
+      </form>
+
+      <form class="panel form" method="post" action="/api/client-defaults">
+        <h2>Client defaults</h2>
+        <input type="hidden" name="tenant_id" value="{{.Scope.TenantID}}">
+        <input type="hidden" name="lab_id" value="{{.Scope.LabID}}">
+        <input name="actor" value="lab-dev" aria-label="Actor">
+        <select name="client_id" required><option value="">Client…</option>{{range .Clients}}<option value="{{.ID}}">{{.Name}} ({{.ID}})</option>{{end}}</select>
+        <input name="report_template" placeholder="Report template">
+        <input name="invoice_email" placeholder="Invoice email">
+        <input name="default_matrix" placeholder="Default matrix">
+        <textarea name="default_tests" placeholder="Default analyses"></textarea>
+        <button>Save defaults</button>
+      </form>
+
       <form class="panel form" method="post" action="/api/samples" id="intake">
         <h2>Fast sample intake</h2>
         <input type="hidden" name="tenant_id" value="{{.Scope.TenantID}}">
@@ -88,6 +150,36 @@
         <h2>Clients</h2>
         <ul class="list">
           {{range .Clients}}<li><strong>{{.ID}}</strong><span>{{.Name}}</span><small>{{.TenantID}}/{{.LabID}} • {{.Email}}</small></li>{{else}}<li class="empty">No clients yet.</li>{{end}}
+        </ul>
+      </section>
+      <section class="panel">
+        <h2>Sites / divisions</h2>
+        <ul class="list">
+          {{range .Sites}}<li><strong>{{.ID}}</strong><span>{{.Name}}</span><small>{{.ClientID}} • {{.Division}} • {{.Address}}</small></li>{{else}}<li class="empty">No sites yet.</li>{{end}}
+        </ul>
+      </section>
+      <section class="panel">
+        <h2>Contacts</h2>
+        <ul class="list">
+          {{range .Contacts}}<li><strong>{{.ID}}</strong><span>{{.Name}}</span><small>{{.ClientID}} {{if .SiteID}}• {{.SiteID}}{{end}} • {{.Email}} {{.Phone}}</small></li>{{else}}<li class="empty">No contacts yet.</li>{{end}}
+        </ul>
+      </section>
+      <section class="panel">
+        <h2>Projects / work orders</h2>
+        <ul class="list">
+          {{range .Projects}}<li><strong>{{.ID}}</strong><span>{{.Name}}</span><small>{{.ClientID}} {{if .SiteID}}• {{.SiteID}}{{end}} • {{.WorkOrder}} • {{.DefaultMatrix}}</small></li>{{else}}<li class="empty">No projects yet.</li>{{end}}
+        </ul>
+      </section>
+      <section class="panel">
+        <h2>Contact roles</h2>
+        <ul class="list">
+          {{range .ContactRoles}}<li><strong>{{.ID}}</strong><span>{{.Role}}</span><small>{{.ContactID}}</small></li>{{else}}<li class="empty">No contact roles yet.</li>{{end}}
+        </ul>
+      </section>
+      <section class="panel">
+        <h2>Client defaults</h2>
+        <ul class="list">
+          {{range .ClientDefaults}}<li><strong>{{.ClientID}}</strong><span>{{.ReportTemplate}}</span><small>{{.DefaultMatrix}} • {{.InvoiceEmail}}</small></li>{{else}}<li class="empty">No client defaults yet.</li>{{end}}
         </ul>
       </section>
       <section class="panel" id="audit">

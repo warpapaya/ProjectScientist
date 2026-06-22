@@ -105,7 +105,7 @@ type StoreRepository interface {
 	Close() error
 }
 
-const sqliteSchemaVersion = 2
+const sqliteSchemaVersion = 3
 
 var sqliteMigrations = []string{
 	`PRAGMA journal_mode = WAL;`,
@@ -151,11 +151,69 @@ var sqliteMigrations = []string{
 		previous_hash TEXT NOT NULL,
 		hash TEXT NOT NULL UNIQUE
 	);`,
+	`CREATE TABLE IF NOT EXISTS sites (
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		id TEXT PRIMARY KEY,
+		client_id TEXT NOT NULL REFERENCES clients(id),
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		division TEXT NOT NULL DEFAULT '',
+		address TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS contacts (
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		id TEXT PRIMARY KEY,
+		client_id TEXT NOT NULL REFERENCES clients(id),
+		site_id TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		email TEXT NOT NULL DEFAULT '',
+		phone TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS contact_roles (
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		id TEXT PRIMARY KEY,
+		contact_id TEXT NOT NULL REFERENCES contacts(id),
+		role TEXT NOT NULL CHECK (length(trim(role)) > 0),
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS projects (
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		id TEXT PRIMARY KEY,
+		client_id TEXT NOT NULL REFERENCES clients(id),
+		site_id TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		work_order TEXT NOT NULL DEFAULT '',
+		default_matrix TEXT NOT NULL DEFAULT '',
+		default_tests_json TEXT NOT NULL DEFAULT '[]',
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS client_defaults (
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		client_id TEXT NOT NULL REFERENCES clients(id),
+		report_template TEXT NOT NULL DEFAULT '',
+		invoice_email TEXT NOT NULL DEFAULT '',
+		default_matrix TEXT NOT NULL DEFAULT '',
+		default_tests_json TEXT NOT NULL DEFAULT '[]',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		PRIMARY KEY (tenant_id, lab_id, client_id)
+	);`,
 	`INSERT OR IGNORE INTO store_meta(key, value) VALUES
 		('next_client', '1'),
 		('next_sample', '1'),
+		('next_site', '1'),
+		('next_contact', '1'),
+		('next_contact_role', '1'),
+		('next_project', '1'),
 		('next_audit', '1'),
 		('last_hash', '');`,
+	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1');`,
 }
 
 func OpenStore(statePath, _ string) (*Store, error) { return OpenSQLiteStore(statePath) }
@@ -222,6 +280,10 @@ func (s *Store) migrate(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_clients_scope ON clients(tenant_id, lab_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_samples_scope_client_id ON samples(tenant_id, lab_id, client_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_events_scope ON audit_events(tenant_id, lab_id, sequence);`,
+		`CREATE INDEX IF NOT EXISTS idx_sites_scope_client_id ON sites(tenant_id, lab_id, client_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_contacts_scope_client_id ON contacts(tenant_id, lab_id, client_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_contact_roles_scope_contact_id ON contact_roles(tenant_id, lab_id, contact_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_projects_scope_client_id ON projects(tenant_id, lab_id, client_id);`,
 	} {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("sqlite migration scope index: %w", err)
