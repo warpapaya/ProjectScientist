@@ -178,6 +178,10 @@ func analysisRequestLineByIDTx(q analysisRequestLineQueryer, id string) (Analysi
 	return scanAnalysisRequestLine(q.QueryRow(analysisRequestLineSelect+` FROM analysis_request_lines WHERE id = ?`, strings.TrimSpace(id)))
 }
 
+func analysisRequestLineByIDForScopeTx(q analysisRequestLineQueryer, scope Scope, id string) (AnalysisRequestLine, error) {
+	return scanAnalysisRequestLine(q.QueryRow(analysisRequestLineSelect+` FROM analysis_request_lines WHERE tenant_id = ? AND lab_id = ? AND id = ?`, scope.TenantID, scope.LabID, strings.TrimSpace(id)))
+}
+
 type analysisRequestLineScanner interface{ Scan(dest ...any) error }
 
 func scanAnalysisRequestLine(row analysisRequestLineScanner) (AnalysisRequestLine, error) {

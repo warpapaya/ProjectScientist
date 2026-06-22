@@ -123,6 +123,7 @@ func serve() error {
 	mux.HandleFunc("POST /api/samples/", application.sampleAction)
 	mux.HandleFunc("POST /api/worksheets", application.createWorksheet)
 	mux.HandleFunc("POST /api/worksheets/", application.routeWorksheetMutation)
+	mux.HandleFunc("POST /api/results", application.upsertResult)
 	mux.HandleFunc("POST /api/catalog/departments", application.createCatalogDepartment)
 	mux.HandleFunc("POST /api/catalog/units", application.createCatalogUnit)
 	mux.HandleFunc("POST /api/catalog/methods", application.createCatalogMethod)
@@ -605,6 +606,30 @@ func writeMutationResponse(w http.ResponseWriter, r *http.Request, value any, er
 		return
 	}
 	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+}
+
+func (a *app) upsertResult(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	input := lab.ResultInput{
+		AnalysisRequestLineID: r.FormValue("analysis_request_line_id"),
+		Value:                 r.FormValue("value"),
+		RawValue:              r.FormValue("raw_value"),
+		Unit:                  r.FormValue("unit"),
+		Qualifier:             r.FormValue("qualifier"),
+		MDL:                   r.FormValue("mdl"),
+		RL:                    r.FormValue("rl"),
+		LOQ:                   r.FormValue("loq"),
+		Dilution:              r.FormValue("dilution"),
+		Uncertainty:           r.FormValue("uncertainty"),
+		Comments:              r.FormValue("comments"),
+		AnalystID:             r.FormValue("analyst_id"),
+		InstrumentID:          r.FormValue("instrument_id"),
+	}
+	result, err := a.store.UpsertResultForScope(scopeFromRequest(r), input, actor(r))
+	writeMutationResponse(w, r, result, err)
 }
 
 func (a *app) createSample(w http.ResponseWriter, r *http.Request) {
