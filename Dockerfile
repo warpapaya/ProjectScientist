@@ -12,9 +12,11 @@ FROM golang:1.26-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d
 RUN apk add --no-cache gcc musl-dev
 WORKDIR /src
 COPY go.* ./
+RUN go mod download
 COPY cmd ./cmd
 COPY fixtures ./fixtures
 COPY internal ./internal
+ENV GOMAXPROCS=2 GOFLAGS="-p=1"
 CMD ["go", "test", "-mod=readonly", "./..."]
 
 FROM alpine:3.22@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601 AS runtime

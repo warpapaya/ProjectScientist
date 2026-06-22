@@ -3,6 +3,8 @@
 DEV_HEALTH_URL ?= http://127.0.0.1:8097/healthz
 DEV_BASE_URL ?= http://127.0.0.1:8097
 COMPOSE ?= docker compose
+COMPOSE_PROJECT_NAME ?= project-scientist-$(shell printf '%s' '$(abspath $(CURDIR))' | cksum | cut -d ' ' -f 1)
+export COMPOSE_PROJECT_NAME
 
 # Host gates.
 test:
