@@ -171,7 +171,7 @@ Repo-local runtime directories are ignored and excluded from Docker context: `da
 
 ## Determinism and image review
 
-- Compose uses a directory-derived project name by default, supports explicit `COMPOSE_PROJECT_NAME`/`DEV_PORT`/`SMOKE_PORT` overrides for concurrent workers, uses deterministic local image tags (`project-scientist:dev-local`, `project-scientist:test-local`), loopback-only port binding, a named dev data volume scoped by Compose project, and an isolated smoke project that does not mutate preserved dev volumes.
+- Compose uses a directory-derived project name by default, supports explicit `COMPOSE_PROJECT_NAME`/`DEV_PORT`/`SMOKE_PORT` overrides for concurrent workers, uses worktree-specific local image tags, loopback-only port binding, a named dev data volume scoped by Compose project, and an isolated smoke project that does not mutate preserved dev volumes.
 - Dockerfile build/runtime bases are pinned by digest and should only be updated deliberately.
 - Runtime stays dependency-light: static Go binary on Alpine, non-root `scientist` user, SQLite file persistence only, no Redis/auth/proxy services added in this lane.
 - SQLite uses `github.com/mattn/go-sqlite3`, so Docker build/test stages install Alpine `gcc`/`musl-dev` and compile with CGO enabled; build tooling is not copied into the runtime stage.
