@@ -80,6 +80,12 @@ type CatalogUnitInput struct {
 	Symbol string `json:"symbol"`
 }
 
+type CatalogUnitUpdateInput struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Symbol string `json:"symbol"`
+}
+
 type CatalogMethodInput struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -132,13 +138,63 @@ func (s *Store) CreateCatalogDepartmentForScope(scope Scope, input CatalogDepart
 		if _, err := tx.Exec(`INSERT INTO catalog_departments(id, tenant_id, lab_id, name, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)`, department.ID, department.TenantID, department.LabID, department.Name, department.SortOrder, formatTime(department.CreatedAt)); err != nil {
 			return err
 		}
-		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: string(OperationCatalogConfigure), Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "catalog_department", ID: department.ID}, Details: map[string]any{"name": department.Name}})
+		if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: string(OperationCatalogConfigure), Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "catalog_department", ID: department.ID}, Details: map[string]any{"name": department.Name}}); err != nil {
+			return err
+		}
+		_, err = createCatalogSnapshotTx(tx, scope, actor, "catalog_department.created")
+		return err
 	})
 	return department, err
 }
 
 func (s *Store) CreateCatalogUnit(input CatalogUnitInput, actor ActorContext) (CatalogUnit, error) {
 	return s.CreateCatalogUnitForScope(defaultScope(), input, actor)
+}
+
+func (s *Store) UpdateCatalogUnit(input CatalogUnitUpdateInput, actor ActorContext) (CatalogUnit, error) {
+	return s.UpdateCatalogUnitForScope(defaultScope(), input, actor)
+}
+
+func (s *Store) UpdateCatalogUnitForScope(scope Scope, input CatalogUnitUpdateInput, actor ActorContext) (CatalogUnit, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return CatalogUnit{}, err
+	}
+	id := strings.TrimSpace(input.ID)
+	name, symbol := strings.TrimSpace(input.Name), strings.TrimSpace(input.Symbol)
+	if id == "" {
+		return CatalogUnit{}, errors.New("unit id is required")
+	}
+	if name == "" || symbol == "" {
+		return CatalogUnit{}, errors.New("unit name and symbol are required")
+	}
+	var unit CatalogUnit
+	err = s.withTx(func(tx *sql.Tx) error {
+		if err := Authorize(scope, OperationCatalogConfigure, actor); err != nil {
+			return err
+		}
+		var created string
+		if err := tx.QueryRow(`SELECT id, tenant_id, lab_id, name, symbol, created_at FROM catalog_units WHERE id = ? AND tenant_id = ? AND lab_id = ?`, id, scope.TenantID, scope.LabID).Scan(&unit.ID, &unit.TenantID, &unit.LabID, &unit.Name, &unit.Symbol, &created); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("unknown unit %q", id)
+			}
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE catalog_units SET name = ?, symbol = ? WHERE id = ? AND tenant_id = ? AND lab_id = ?`, name, symbol, id, scope.TenantID, scope.LabID); err != nil {
+			return err
+		}
+		unit.Name = name
+		unit.Symbol = symbol
+		unit.CreatedAt, _ = parseTime(created)
+		if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: string(OperationCatalogConfigure), Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "catalog_unit", ID: unit.ID}, Details: map[string]any{"symbol": unit.Symbol, "updated": true}}); err != nil {
+			return err
+		}
+		_, err = createCatalogSnapshotTx(tx, scope, actor, "catalog_unit.updated")
+		return err
+	})
+	return unit, err
 }
 
 func (s *Store) CreateCatalogUnitForScope(scope Scope, input CatalogUnitInput, actor ActorContext) (CatalogUnit, error) {
@@ -165,7 +221,11 @@ func (s *Store) CreateCatalogUnitForScope(scope Scope, input CatalogUnitInput, a
 		if _, err := tx.Exec(`INSERT INTO catalog_units(id, tenant_id, lab_id, name, symbol, created_at) VALUES (?, ?, ?, ?, ?, ?)`, unit.ID, unit.TenantID, unit.LabID, unit.Name, unit.Symbol, formatTime(unit.CreatedAt)); err != nil {
 			return err
 		}
-		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: string(OperationCatalogConfigure), Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "catalog_unit", ID: unit.ID}, Details: map[string]any{"symbol": unit.Symbol}})
+		if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: string(OperationCatalogConfigure), Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "catalog_unit", ID: unit.ID}, Details: map[string]any{"symbol": unit.Symbol}}); err != nil {
+			return err
+		}
+		_, err = createCatalogSnapshotTx(tx, scope, actor, "catalog_unit.created")
+		return err
 	})
 	return unit, err
 }
@@ -198,7 +258,11 @@ func (s *Store) CreateCatalogMethodForScope(scope Scope, input CatalogMethodInpu
 		if _, err := tx.Exec(`INSERT INTO catalog_methods(id, tenant_id, lab_id, name, description, created_at) VALUES (?, ?, ?, ?, ?, ?)`, method.ID, method.TenantID, method.LabID, method.Name, method.Description, formatTime(method.CreatedAt)); err != nil {
 			return err
 		}
-		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: string(OperationCatalogConfigure), Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "catalog_method", ID: method.ID}, Details: map[string]any{"name": method.Name}})
+		if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: string(OperationCatalogConfigure), Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "catalog_method", ID: method.ID}, Details: map[string]any{"name": method.Name}}); err != nil {
+			return err
+		}
+		_, err = createCatalogSnapshotTx(tx, scope, actor, "catalog_method.created")
+		return err
 	})
 	return method, err
 }
@@ -234,7 +298,11 @@ func (s *Store) CreateCatalogAnalyteForScope(scope Scope, input CatalogAnalyteIn
 		if _, err := tx.Exec(`INSERT INTO catalog_analytes(id, tenant_id, lab_id, name, default_unit_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`, analyte.ID, analyte.TenantID, analyte.LabID, analyte.Name, analyte.DefaultUnitID, formatTime(analyte.CreatedAt)); err != nil {
 			return err
 		}
-		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: string(OperationCatalogConfigure), Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "catalog_analyte", ID: analyte.ID}, Details: map[string]any{"name": analyte.Name}})
+		if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: string(OperationCatalogConfigure), Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "catalog_analyte", ID: analyte.ID}, Details: map[string]any{"name": analyte.Name}}); err != nil {
+			return err
+		}
+		_, err = createCatalogSnapshotTx(tx, scope, actor, "catalog_analyte.created")
+		return err
 	})
 	return analyte, err
 }
@@ -287,7 +355,8 @@ func (s *Store) CreateAnalysisServiceForScope(scope Scope, input AnalysisService
 			return err
 		}
 		service = loaded
-		return nil
+		_, err = createCatalogSnapshotTx(tx, scope, actor, "analysis_service.created")
+		return err
 	})
 	return service, err
 }
@@ -340,7 +409,11 @@ func (s *Store) CreateAnalysisProfileForScope(scope Scope, input AnalysisProfile
 			return errors.New("profile requires at least one non-empty service")
 		}
 		profile.Services = services
-		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: string(OperationCatalogConfigure), Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "analysis_profile", ID: profile.ID}, Details: map[string]any{"name": profile.Name, "service_count": len(profile.Services)}})
+		if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: string(OperationCatalogConfigure), Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "analysis_profile", ID: profile.ID}, Details: map[string]any{"name": profile.Name, "service_count": len(profile.Services)}}); err != nil {
+			return err
+		}
+		_, err = createCatalogSnapshotTx(tx, scope, actor, "analysis_profile.created")
+		return err
 	})
 	return profile, err
 }

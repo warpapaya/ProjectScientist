@@ -61,6 +61,7 @@ Needed:
 - Analysis services, methods, analytes, units, profiles/panels, departments/categories.
 - Specs/limits, qualifiers, report settings, EDD/export settings.
 - Versioned catalog objects so reports/results can cite the configuration active at release time.
+  - Lab-test v1: catalog create/update operations persist immutable `CatalogSnapshot` rows with version/hash metadata; sample analyses store the active snapshot id/version for downstream result/report artifact references.
 
 ### 4. Sample accessioning and custody
 

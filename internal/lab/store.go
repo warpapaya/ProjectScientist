@@ -65,13 +65,15 @@ type Client struct {
 }
 
 type Analysis struct {
-	ID       string `json:"id"`
-	TenantID string `json:"tenant_id,omitempty"`
-	LabID    string `json:"lab_id,omitempty"`
-	Name     string `json:"name"`
-	Method   string `json:"method,omitempty"`
-	Result   string `json:"result,omitempty"`
-	Units    string `json:"units,omitempty"`
+	ID                     string `json:"id"`
+	TenantID               string `json:"tenant_id,omitempty"`
+	LabID                  string `json:"lab_id,omitempty"`
+	Name                   string `json:"name"`
+	Method                 string `json:"method,omitempty"`
+	Result                 string `json:"result,omitempty"`
+	Units                  string `json:"units,omitempty"`
+	CatalogSnapshotID      string `json:"catalog_snapshot_id,omitempty"`
+	CatalogSnapshotVersion int    `json:"catalog_snapshot_version,omitempty"`
 }
 
 type Sample struct {
@@ -324,7 +326,17 @@ var sqliteMigrations = []string{
 		updated_at TEXT NOT NULL,
 		UNIQUE(tenant_id, lab_id, kind, code)
 	);`,
-	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('last_hash', '');`,
+	`CREATE TABLE IF NOT EXISTS catalog_snapshots (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		version INTEGER NOT NULL,
+		content_hash TEXT NOT NULL,
+		data_json TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		UNIQUE(tenant_id, lab_id, version)
+	);`,
+	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('last_hash', '');`,
 	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (5, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
 }
 
@@ -345,6 +357,7 @@ var sqlitePostMigrationIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_analysis_services_scope_order ON analysis_services(tenant_id, lab_id, department_id, sort_order, name);`,
 	`CREATE INDEX IF NOT EXISTS idx_analysis_profile_services_order ON analysis_profile_services(profile_id, sort_order);`,
 	`CREATE INDEX IF NOT EXISTS idx_sample_reference_scope_kind_order ON sample_reference_items(tenant_id, lab_id, kind, active, sort_order, name);`,
+	`CREATE INDEX IF NOT EXISTS idx_catalog_snapshots_scope_version ON catalog_snapshots(tenant_id, lab_id, version);`,
 }
 
 func OpenStore(statePath, _ string) (*Store, error) { return OpenSQLiteStore(statePath) }
@@ -661,13 +674,22 @@ func (s *Store) CreateSampleForScope(scope Scope, input CreateSampleInput, actor
 			return err
 		}
 		sampleID := fmt.Sprintf("S-%06d", next)
+		snapshot, hasSnapshot, err := currentCatalogSnapshotTx(tx, scope)
+		if err != nil {
+			return err
+		}
 		analyses := make([]Analysis, 0, len(input.Tests))
 		for i, test := range input.Tests {
 			test = strings.TrimSpace(test)
 			if test == "" {
 				continue
 			}
-			analyses = append(analyses, Analysis{ID: fmt.Sprintf("%s-A%02d", sampleID, i+1), TenantID: scope.TenantID, LabID: scope.LabID, Name: test})
+			analysis := Analysis{ID: fmt.Sprintf("%s-A%02d", sampleID, i+1), TenantID: scope.TenantID, LabID: scope.LabID, Name: test}
+			if hasSnapshot {
+				analysis.CatalogSnapshotID = snapshot.ID
+				analysis.CatalogSnapshotVersion = snapshot.Version
+			}
+			analyses = append(analyses, analysis)
 		}
 		if len(analyses) == 0 {
 			return errors.New("at least one non-empty analysis is required")
