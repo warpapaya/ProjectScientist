@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"html/template"
 	"net/http"
@@ -92,5 +93,58 @@ func TestSampleIntakeV2HTTPAndHTMLLowClickFlow(t *testing.T) {
 	}
 	if sample.Analyses[0].ProfileID != profile.ID || sample.Analyses[0].ServiceID != ph.ID {
 		t.Fatalf("HTTP sample missing catalog-driven profile/service analysis: %#v", sample.Analyses)
+	}
+}
+
+func TestSampleIntakeTemplateHTTPBulkCreatesSamples(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app := &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}
+	actor := lab.MustActorContext(lab.ActorContextInput{UserID: "bulk-http", RequestID: "bulk-http", CorrelationID: "bulk-http", TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleLabManager)}}}, Roles: []string{string(lab.RoleLabManager)}})
+
+	client, _ := store.CreateClient("HTTP Bulk Client", "bulk-http@example.test", actor)
+	project, _ := store.CreateProjectForScope(lab.DefaultScope, lab.ProjectInput{ClientID: client.ID, Name: "Bulk Project", WorkOrder: "WO-BULK", DefaultMatrix: "Fallback"}, actor)
+	matrix, _ := store.CreateSampleReferenceItem(lab.SampleReferenceItemInput{Kind: lab.SampleReferenceMatrix, Code: "DW", Name: "Drinking Water", Active: true}, actor)
+	dept, _ := store.CreateCatalogDepartment(lab.CatalogDepartmentInput{Name: "Wet Chem"}, actor)
+	ph, _ := store.CreateAnalysisService(lab.AnalysisServiceInput{Name: "pH", DepartmentID: dept.ID}, actor)
+	profile, _ := store.CreateAnalysisProfile(lab.AnalysisProfileInput{Name: "Bulk Routine", ServiceIDs: []string{ph.ID}}, actor)
+
+	createTemplate := performForm(t, app.createSampleIntakeTemplate, "/api/sample-intake-templates", url.Values{
+		"name":                 {"Bulk HTTP template"},
+		"client_id":            {client.ID},
+		"project_id":           {project.ID},
+		"matrix_reference_id":  {matrix.ID},
+		"priority":             {"rush"},
+		"analysis_profile_ids": {profile.ID},
+	}, lab.DefaultTenantID, lab.DefaultLabID)
+	if createTemplate.Code != http.StatusCreated {
+		t.Fatalf("create template status=%d body=%s", createTemplate.Code, createTemplate.Body.String())
+	}
+	var tmpl lab.SampleIntakeTemplate
+	if err := json.Unmarshal(createTemplate.Body.Bytes(), &tmpl); err != nil {
+		t.Fatalf("decode template: %v", err)
+	}
+
+	payload := []lab.SampleTemplateRowInput{{ClientSampleID: "FIELD-A", LabSampleID: "LAB-A"}, {ClientSampleID: "FIELD-B", LabSampleID: "LAB-B", Comments: "second row"}}
+	bodyBytes, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/sample-intake-templates/"+tmpl.ID+"/samples", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-PSC-Tenant-ID", lab.DefaultTenantID)
+	req.Header.Set("X-PSC-Lab-ID", lab.DefaultLabID)
+	bulk := httptest.NewRecorder()
+	app.createSamplesFromTemplate(bulk, req)
+	if bulk.Code != http.StatusCreated {
+		t.Fatalf("bulk create status=%d body=%s", bulk.Code, bulk.Body.String())
+	}
+	var samples []lab.Sample
+	if err := json.Unmarshal(bulk.Body.Bytes(), &samples); err != nil {
+		t.Fatalf("decode bulk samples: %v", err)
+	}
+	if len(samples) != 2 || samples[0].ProjectID != project.ID || samples[0].Priority != lab.PriorityRush || samples[1].Comments != "second row" {
+		t.Fatalf("unexpected bulk samples: %#v", samples)
 	}
 }

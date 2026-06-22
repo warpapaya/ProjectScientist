@@ -405,8 +405,30 @@ var sqliteMigrations = []string{
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	);`,
-	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('next_analysis_request_line', '1'), ('last_hash', '');`,
-	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (5, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
+	`CREATE TABLE IF NOT EXISTS sample_intake_templates (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		client_id TEXT NOT NULL REFERENCES clients(id),
+		project_id TEXT NOT NULL DEFAULT '',
+		project TEXT NOT NULL DEFAULT '',
+		matrix TEXT NOT NULL DEFAULT '',
+		matrix_reference_id TEXT NOT NULL DEFAULT '',
+		container_id TEXT NOT NULL DEFAULT '',
+		preservative_id TEXT NOT NULL DEFAULT '',
+		storage_location_id TEXT NOT NULL DEFAULT '',
+		received_condition_id TEXT NOT NULL DEFAULT '',
+		priority TEXT NOT NULL DEFAULT 'routine',
+		analysis_profile_ids_json TEXT NOT NULL DEFAULT '[]',
+		analysis_service_ids_json TEXT NOT NULL DEFAULT '[]',
+		tests_json TEXT NOT NULL DEFAULT '[]',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		UNIQUE(tenant_id, lab_id, name)
+	);`,
+	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('next_analysis_request_line', '1'), ('next_sample_intake_template', '1'), ('last_hash', '');`,
+	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (6, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
 }
 
 var sqlitePostMigrationIndexes = []string{
@@ -430,6 +452,7 @@ var sqlitePostMigrationIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_sample_reference_scope_kind_order ON sample_reference_items(tenant_id, lab_id, kind, active, sort_order, name);`,
 	`CREATE INDEX IF NOT EXISTS idx_catalog_snapshots_scope_version ON catalog_snapshots(tenant_id, lab_id, version);`,
 	`CREATE INDEX IF NOT EXISTS idx_analysis_request_lines_scope_sample ON analysis_request_lines(tenant_id, lab_id, sample_id);`,
+	`CREATE INDEX IF NOT EXISTS idx_sample_intake_templates_scope_client ON sample_intake_templates(tenant_id, lab_id, client_id, name);`,
 }
 
 func OpenStore(statePath, _ string) (*Store, error) { return OpenSQLiteStore(statePath) }
