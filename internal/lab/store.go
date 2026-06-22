@@ -253,8 +253,65 @@ var sqliteMigrations = []string{
 		updated_at TEXT NOT NULL,
 		PRIMARY KEY (tenant_id, lab_id, client_id)
 	);`,
-	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('last_hash', '');`,
-	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (3, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
+	`CREATE TABLE IF NOT EXISTS catalog_departments (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		sort_order INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS catalog_units (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		symbol TEXT NOT NULL CHECK (length(trim(symbol)) > 0),
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS catalog_methods (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		description TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS catalog_analytes (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		default_unit_id TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS analysis_services (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		department_id TEXT NOT NULL,
+		method_id TEXT NOT NULL DEFAULT '',
+		analyte_id TEXT NOT NULL DEFAULT '',
+		unit_id TEXT NOT NULL DEFAULT '',
+		sort_order INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS analysis_profiles (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS analysis_profile_services (
+		profile_id TEXT NOT NULL,
+		service_id TEXT NOT NULL,
+		sort_order INTEGER NOT NULL,
+		PRIMARY KEY(profile_id, service_id)
+	);`,
+	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('last_hash', '');`,
+	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
 }
 
 var sqlitePostMigrationIndexes = []string{
@@ -267,6 +324,12 @@ var sqlitePostMigrationIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_contacts_scope_client_id ON contacts(tenant_id, lab_id, client_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_contact_roles_scope_contact_id ON contact_roles(tenant_id, lab_id, contact_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_projects_scope_client_id ON projects(tenant_id, lab_id, client_id);`,
+	`CREATE INDEX IF NOT EXISTS idx_catalog_departments_scope_order ON catalog_departments(tenant_id, lab_id, sort_order, name);`,
+	`CREATE INDEX IF NOT EXISTS idx_catalog_units_scope ON catalog_units(tenant_id, lab_id, symbol);`,
+	`CREATE INDEX IF NOT EXISTS idx_catalog_methods_scope ON catalog_methods(tenant_id, lab_id, name);`,
+	`CREATE INDEX IF NOT EXISTS idx_catalog_analytes_scope ON catalog_analytes(tenant_id, lab_id, name);`,
+	`CREATE INDEX IF NOT EXISTS idx_analysis_services_scope_order ON analysis_services(tenant_id, lab_id, department_id, sort_order, name);`,
+	`CREATE INDEX IF NOT EXISTS idx_analysis_profile_services_order ON analysis_profile_services(profile_id, sort_order);`,
 }
 
 func OpenStore(statePath, _ string) (*Store, error) { return OpenSQLiteStore(statePath) }

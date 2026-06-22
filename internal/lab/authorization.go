@@ -46,11 +46,12 @@ const (
 	OperationReportExport   Operation = "report.export"
 	OperationReportAmend    Operation = "report.amend"
 
-	OperationAuditView      Operation = "audit.view"
-	OperationAuditExport    Operation = "audit.export"
-	OperationImportRun      Operation = "import.run"
-	OperationExportRun      Operation = "export.run"
-	OperationAdminConfigure Operation = "admin.configure"
+	OperationAuditView        Operation = "audit.view"
+	OperationAuditExport      Operation = "audit.export"
+	OperationImportRun        Operation = "import.run"
+	OperationExportRun        Operation = "export.run"
+	OperationCatalogConfigure Operation = "catalog.configure"
+	OperationAdminConfigure   Operation = "admin.configure"
 )
 
 var ErrAuthorizationDenied = errors.New("authorization denied")
@@ -80,11 +81,12 @@ var operationAllowedRoles = map[Operation][]Role{
 	OperationReportExport:   {RoleAdmin, RoleLabManager, RoleReportReleaser},
 	OperationReportAmend:    {RoleAdmin, RoleReportReleaser},
 
-	OperationAuditView:      {RoleAdmin, RoleLabManager},
-	OperationAuditExport:    {RoleAdmin},
-	OperationImportRun:      {RoleAdmin, RoleMigrationService},
-	OperationExportRun:      {RoleAdmin, RoleLabManager},
-	OperationAdminConfigure: {RoleAdmin},
+	OperationAuditView:        {RoleAdmin, RoleLabManager},
+	OperationAuditExport:      {RoleAdmin},
+	OperationImportRun:        {RoleAdmin, RoleMigrationService},
+	OperationExportRun:        {RoleAdmin, RoleLabManager},
+	OperationCatalogConfigure: {RoleAdmin, RoleLabManager},
+	OperationAdminConfigure:   {RoleAdmin},
 }
 
 func Authorize(scope Scope, operation Operation, actor ActorContext) error {
