@@ -126,14 +126,19 @@ func splitTests(raw string) []string {
 	return out
 }
 
-func actor(r *http.Request) string {
-	if actor := strings.TrimSpace(r.Header.Get("X-PSC-Actor")); actor != "" {
-		return actor
+func actor(r *http.Request) lab.ActorContext {
+	requestID := strings.TrimSpace(r.Header.Get("X-PSC-Request-ID"))
+	if requestID == "" {
+		requestID = "local-http-request"
 	}
-	if actor := strings.TrimSpace(r.FormValue("actor")); actor != "" {
-		return actor
-	}
-	return "lab-dev"
+	return lab.MustActorContext(lab.ActorContextInput{
+		UserID:            "lab-dev",
+		DisplayName:       "lab-dev",
+		AuthProvider:      "local-dev",
+		RequestID:         requestID,
+		CorrelationID:     requestID,
+		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID}},
+	})
 }
 
 func wantsJSON(r *http.Request) bool {
