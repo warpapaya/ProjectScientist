@@ -1,17 +1,23 @@
 # Project Scientist local-only development/runtime image.
 # Base images are pinned by digest for deterministic rebuilds; update deliberately.
 FROM golang:1.26-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648 AS build
+ARG GO_PARALLEL=2
+ENV GOMAXPROCS=${GO_PARALLEL} GOFLAGS="-p=${GO_PARALLEL}"
 RUN apk add --no-cache gcc musl-dev
 WORKDIR /src
 COPY go.* ./
+RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w -linkmode external -extldflags '-static'" -o /out/project-scientist ./cmd/project-scientist
 
 FROM golang:1.26-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648 AS test
+ARG GO_PARALLEL=2
+ENV GOMAXPROCS=${GO_PARALLEL} GOFLAGS="-p=${GO_PARALLEL}"
 RUN apk add --no-cache gcc musl-dev
 WORKDIR /src
 COPY go.* ./
+RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 COPY fixtures ./fixtures
