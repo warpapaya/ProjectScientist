@@ -567,6 +567,7 @@ func (a *app) createSample(w http.ResponseWriter, r *http.Request) {
 		AnalysisProfileIDs:  splitIDs(r.Form["analysis_profile_ids"]),
 		AnalysisServiceIDs:  splitIDs(r.Form["analysis_service_ids"]),
 		Tests:               splitTests(r.FormValue("tests")),
+		Containers:          sampleContainerInputsFromRequest(r),
 	}
 	sample, err := a.store.CreateSampleForScope(scopeFromRequest(r), input, actor(r))
 	if err != nil {
@@ -749,6 +750,34 @@ func splitTests(raw string) []string {
 		}
 	}
 	return out
+}
+
+func sampleContainerInputsFromRequest(r *http.Request) []lab.SampleContainerInput {
+	containerID := strings.TrimSpace(r.FormValue("container_id"))
+	volume := strings.TrimSpace(r.FormValue("container_volume"))
+	condition := strings.TrimSpace(r.FormValue("container_condition"))
+	instructions := strings.TrimSpace(r.FormValue("aliquot_instructions"))
+	aliquot := lab.SampleAliquotInput{
+		DepartmentID: strings.TrimSpace(r.FormValue("aliquot_department_id")),
+		MethodID:     strings.TrimSpace(r.FormValue("aliquot_method_id")),
+		Volume:       strings.TrimSpace(r.FormValue("aliquot_volume")),
+		Purpose:      strings.TrimSpace(r.FormValue("aliquot_purpose")),
+	}
+	if containerID == "" && volume == "" && condition == "" && instructions == "" && aliquot.DepartmentID == "" && aliquot.MethodID == "" && aliquot.Volume == "" && aliquot.Purpose == "" {
+		return nil
+	}
+	input := lab.SampleContainerInput{
+		ContainerReferenceID: containerID,
+		PreservativeID:       r.FormValue("preservative_id"),
+		ReceivedConditionID:  r.FormValue("received_condition_id"),
+		Volume:               volume,
+		Condition:            condition,
+		AliquotInstructions:  instructions,
+	}
+	if aliquot.DepartmentID != "" || aliquot.MethodID != "" || aliquot.Volume != "" || aliquot.Purpose != "" {
+		input.Aliquots = []lab.SampleAliquotInput{aliquot}
+	}
+	return []lab.SampleContainerInput{input}
 }
 
 func parseOptionalRequestTime(raw string) time.Time {
