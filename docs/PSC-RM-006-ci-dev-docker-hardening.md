@@ -12,16 +12,16 @@ This work hardens local development, Docker repeatability, and CI candidate gate
   - Pinned Go and Alpine base images by digest.
   - Named the runtime stage `runtime` and kept `test` as the container test stage.
   - Added CGO-capable build/test toolchain (`gcc`, `musl-dev`) because the current storage lane uses `github.com/mattn/go-sqlite3`.
-  - Pre-downloads Go modules before source copy and caps Docker build/test package parallelism with `GOFLAGS=-p=<DOCKER_GO_PARALLEL>` plus `GOMAXPROCS` to reduce local CGO/sqlite compile pressure.
+  - Pre-downloads Go modules before source copy and caps Docker test package parallelism with `GOFLAGS=-p=<DOCKER_GO_PARALLEL>`, `GOMAXPROCS`, and `GOMEMLIMIT` to reduce local CGO/sqlite compile/test pressure.
   - Builds a static stripped Linux binary and copies only the binary/web assets into the runtime image.
   - Preserves non-root runtime user, `/data` volume path, and `/healthz` health check.
 - `docker-compose.yml`
-  - Added env-overridable Compose project name, local image tags, runtime target, loopback-only port binding, named dev volume, build parallelism args, and service health check.
+  - Added env-overridable Compose project name, local image tags, runtime target, loopback-only port binding, named dev volume, build/test memory/parallelism args, and service health check.
   - Removed fixed `container_name`; Compose now scopes service/container/network/volume names by project.
 - `Makefile`
   - Added aggregate `ci`, `docker-build`, `docker-smoke`, `image-review`, `dev-reset`, and `dev-seed` targets.
-  - Added `COMPOSE_PROJECT_NAME`, `DEV_PORT`, image tag, and `DOCKER_GO_PARALLEL` overrides. Default `COMPOSE_PROJECT_NAME` derives from the repo/worktree directory.
-  - `docker-test` runs under `<COMPOSE_PROJECT_NAME>-test` and cleans the test project on exit.
+  - Added `COMPOSE_PROJECT_NAME`, `DEV_PORT`, image tag, `DOCKER_GO_PARALLEL`, and `PSC_TEST_GO_MEM_LIMIT` overrides. Default `COMPOSE_PROJECT_NAME` derives from the repo/worktree directory.
+  - `docker-test` runs under `<COMPOSE_PROJECT_NAME>-test`, splits image build from one-shot container run, and cleans the test project on exit.
   - `docker-smoke` starts the container, waits for health, seeds synthetic demo data through the local API, verifies `/api/state`, and stops the Compose project on exit.
 - `scripts/wait-health.sh`
   - Bounded health polling for `make dev-up` instead of a single race-prone curl.

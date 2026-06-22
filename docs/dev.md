@@ -55,7 +55,8 @@ COMPOSE_PROJECT_NAME ?= project-scientist-<repo-dir>
 DEV_PORT ?= 8097
 PSC_IMAGE_TAG ?= project-scientist:dev-local
 PSC_TEST_IMAGE_TAG ?= project-scientist:test-local
-DOCKER_GO_PARALLEL ?= 2
+DOCKER_GO_PARALLEL ?= 1
+PSC_TEST_GO_MEM_LIMIT ?= 512MiB
 ```
 
 Compose service names are project-scoped and the workflow intentionally does not set `container_name`, so multiple worktrees can use separate Compose projects. When two local clones may run the dev HTTP service at the same time, give each one a unique project and loopback port:
@@ -100,13 +101,22 @@ Validate the Docker build/test lane without relying on host Go caches or a host-
 make docker-test
 ```
 
-This runs the Compose `project-scientist-test` profile/service in an isolated `<COMPOSE_PROJECT_NAME>-test` project, building the Dockerfile `test` target and executing:
+This runs the Compose `project-scientist-test` profile/service in an isolated `<COMPOSE_PROJECT_NAME>-test` project. The target splits the Docker test image build from the container run so the expensive build layers finish before the one-shot test container is created:
 
 ```bash
-go test -mod=readonly ./...
+docker compose build project-scientist-test
+docker compose run --no-deps --rm project-scientist-test
 ```
 
-The Dockerfile pre-downloads Go modules before copying source and sets `GOMAXPROCS`/`GOFLAGS=-p=<DOCKER_GO_PARALLEL>` in build/test stages. The default cap is `2` to reduce CGO/sqlite compile pressure on local concurrent workers; raise it only when the host is idle.
+The test container executes:
+
+```bash
+go test -mod=readonly -vet=off -count=1 ./...
+```
+
+`make vet` remains the separate required vet gate. The Docker test lane disables duplicate vet work to keep the container's runtime memory profile small and deterministic instead of re-running vet inside `go test`.
+
+The Dockerfile pre-downloads Go modules before copying source and sets `GOMAXPROCS`, `GOMEMLIMIT`, and `GOFLAGS=-p=<DOCKER_GO_PARALLEL>` in the test stage. Defaults are `DOCKER_GO_PARALLEL=1` and `PSC_TEST_GO_MEM_LIMIT=512MiB` to reduce CGO/sqlite compile/test pressure on local concurrent workers; raise them only when the host is idle.
 
 Validate the development container, health endpoint, seed path, and API state smoke:
 
