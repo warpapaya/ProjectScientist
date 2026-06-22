@@ -554,7 +554,8 @@ func actor(r *http.Request) lab.ActorContext {
 		AuthProvider:      "local-dev",
 		RequestID:         requestID,
 		CorrelationID:     requestID,
-		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID}},
+		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser)}}},
+		Roles:             []string{string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser)},
 	})
 }
 
