@@ -19,6 +19,11 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+type Scope struct {
+	TenantID string `json:"tenant_id"`
+	LabID    string `json:"lab_id"`
+}
+
 type SampleStatus string
 
 const (
@@ -29,7 +34,11 @@ const (
 	StatusReleased   SampleStatus = "released"
 )
 
+var DefaultScope = Scope{TenantID: "local-dev", LabID: "lab-dev"}
+
 type Client struct {
+	TenantID  string    `json:"tenant_id"`
+	LabID     string    `json:"lab_id"`
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
@@ -37,14 +46,18 @@ type Client struct {
 }
 
 type Analysis struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Method string `json:"method,omitempty"`
-	Result string `json:"result,omitempty"`
-	Units  string `json:"units,omitempty"`
+	TenantID string `json:"tenant_id"`
+	LabID    string `json:"lab_id"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Method   string `json:"method,omitempty"`
+	Result   string `json:"result,omitempty"`
+	Units    string `json:"units,omitempty"`
 }
 
 type Sample struct {
+	TenantID  string       `json:"tenant_id"`
+	LabID     string       `json:"lab_id"`
 	ID        string       `json:"id"`
 	ClientID  string       `json:"client_id"`
 	Project   string       `json:"project"`
@@ -63,6 +76,8 @@ type CreateSampleInput struct {
 }
 
 type AuditEvent struct {
+	TenantID     string         `json:"tenant_id"`
+	LabID        string         `json:"lab_id"`
 	Sequence     int64          `json:"sequence"`
 	Timestamp    time.Time      `json:"timestamp"`
 	Actor        string         `json:"actor"`
@@ -90,7 +105,7 @@ type StoreRepository interface {
 	Close() error
 }
 
-const sqliteSchemaVersion = 1
+const sqliteSchemaVersion = 2
 
 var sqliteMigrations = []string{
 	`PRAGMA journal_mode = WAL;`,
@@ -104,12 +119,16 @@ var sqliteMigrations = []string{
 		value TEXT NOT NULL
 	);`,
 	`CREATE TABLE IF NOT EXISTS clients (
+		tenant_id TEXT NOT NULL DEFAULT 'local-dev',
+		lab_id TEXT NOT NULL DEFAULT 'lab-dev',
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
 		email TEXT NOT NULL,
 		created_at TEXT NOT NULL
 	);`,
 	`CREATE TABLE IF NOT EXISTS samples (
+		tenant_id TEXT NOT NULL DEFAULT 'local-dev',
+		lab_id TEXT NOT NULL DEFAULT 'lab-dev',
 		id TEXT PRIMARY KEY,
 		client_id TEXT NOT NULL REFERENCES clients(id),
 		project TEXT NOT NULL CHECK (length(trim(project)) > 0),
@@ -120,6 +139,8 @@ var sqliteMigrations = []string{
 		updated_at TEXT NOT NULL
 	);`,
 	`CREATE TABLE IF NOT EXISTS audit_events (
+		tenant_id TEXT NOT NULL DEFAULT 'local-dev',
+		lab_id TEXT NOT NULL DEFAULT 'lab-dev',
 		sequence INTEGER PRIMARY KEY,
 		timestamp TEXT NOT NULL,
 		actor TEXT NOT NULL,
@@ -130,23 +151,15 @@ var sqliteMigrations = []string{
 		previous_hash TEXT NOT NULL,
 		hash TEXT NOT NULL UNIQUE
 	);`,
-	`CREATE INDEX IF NOT EXISTS idx_samples_client_id ON samples(client_id);`,
 	`INSERT OR IGNORE INTO store_meta(key, value) VALUES
 		('next_client', '1'),
 		('next_sample', '1'),
 		('next_audit', '1'),
 		('last_hash', '');`,
-	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
 }
 
-func OpenStore(statePath, _ string) (*Store, error) {
-	return OpenSQLiteStore(statePath)
-}
-
-func OpenSQLiteStore(dbPath string) (*Store, error) {
-	return openSQLiteStore(dbPath, true)
-}
-
+func OpenStore(statePath, _ string) (*Store, error) { return OpenSQLiteStore(statePath) }
+func OpenSQLiteStore(dbPath string) (*Store, error) { return openSQLiteStore(dbPath, true) }
 func OpenSQLiteStoreWithoutVerification(dbPath string) (*Store, error) {
 	return openSQLiteStore(dbPath, false)
 }
@@ -173,9 +186,7 @@ func openSQLiteStore(dbPath string, verify bool) (*Store, error) {
 	return store, nil
 }
 
-func (s *Store) Close() error {
-	return s.db.Close()
-}
+func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) migrate(ctx context.Context) error {
 	for _, stmt := range sqliteMigrations {
@@ -183,28 +194,86 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("sqlite migration: %w", err)
 		}
 	}
-	return nil
+	for _, col := range []struct{ table, name, ddl string }{
+		{"clients", "tenant_id", "ALTER TABLE clients ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'local-dev'"},
+		{"clients", "lab_id", "ALTER TABLE clients ADD COLUMN lab_id TEXT NOT NULL DEFAULT 'lab-dev'"},
+		{"samples", "tenant_id", "ALTER TABLE samples ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'local-dev'"},
+		{"samples", "lab_id", "ALTER TABLE samples ADD COLUMN lab_id TEXT NOT NULL DEFAULT 'lab-dev'"},
+		{"audit_events", "tenant_id", "ALTER TABLE audit_events ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'local-dev'"},
+		{"audit_events", "lab_id", "ALTER TABLE audit_events ADD COLUMN lab_id TEXT NOT NULL DEFAULT 'lab-dev'"},
+	} {
+		ok, err := s.hasColumn(ctx, col.table, col.name)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			if _, err := s.db.ExecContext(ctx, col.ddl); err != nil {
+				return fmt.Errorf("sqlite migration add %s.%s: %w", col.table, col.name, err)
+			}
+		}
+	}
+	for _, stmt := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_clients_scope ON clients(tenant_id, lab_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_samples_scope_client_id ON samples(tenant_id, lab_id, client_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_events_scope ON audit_events(tenant_id, lab_id, sequence);`,
+	} {
+		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("sqlite migration scope index: %w", err)
+		}
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`, sqliteSchemaVersion)
+	return err
+}
+
+func (s *Store) hasColumn(ctx context.Context, table, name string) (bool, error) {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var col, typ string
+		var notnull int
+		var dflt any
+		var pk int
+		if err := rows.Scan(&cid, &col, &typ, &notnull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if col == name {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func (s *Store) CreateClient(name, email, actor string) (Client, error) {
+	return s.CreateClientForScope(DefaultScope, name, email, actor)
+}
+
+func (s *Store) CreateClientForScope(scope Scope, name, email, actor string) (Client, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return Client{}, err
+	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return Client{}, errors.New("client name is required")
 	}
 	now := time.Now().UTC()
 	var client Client
-	err := s.withTx(func(tx *sql.Tx) error {
+	err = s.withTx(func(tx *sql.Tx) error {
 		next, err := nextCounter(tx, "next_client")
 		if err != nil {
 			return err
 		}
-		client = Client{ID: fmt.Sprintf("C-%05d", next), Name: name, Email: strings.TrimSpace(email), CreatedAt: now}
-		if _, err := tx.Exec(`INSERT INTO clients(id, name, email, created_at) VALUES (?, ?, ?, ?)`, client.ID, client.Name, client.Email, formatTime(client.CreatedAt)); err != nil {
+		client = Client{TenantID: scope.TenantID, LabID: scope.LabID, ID: fmt.Sprintf("C-%05d", next), Name: name, Email: strings.TrimSpace(email), CreatedAt: now}
+		if _, err := tx.Exec(`INSERT INTO clients(tenant_id, lab_id, id, name, email, created_at) VALUES (?, ?, ?, ?, ?, ?)`, client.TenantID, client.LabID, client.ID, client.Name, client.Email, formatTime(client.CreatedAt)); err != nil {
 			return err
 		}
-		return appendAuditTx(tx, actor, "client.created", "client", client.ID, map[string]any{"name": client.Name})
+		return appendAuditTx(tx, scope, actor, "client.created", "client", client.ID, map[string]any{"name": client.Name})
 	})
 	if err != nil {
 		return Client{}, err
@@ -213,8 +282,16 @@ func (s *Store) CreateClient(name, email, actor string) (Client, error) {
 }
 
 func (s *Store) CreateSample(input CreateSampleInput, actor string) (Sample, error) {
+	return s.CreateSampleForScope(DefaultScope, input, actor)
+}
+
+func (s *Store) CreateSampleForScope(scope Scope, input CreateSampleInput, actor string) (Sample, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return Sample{}, err
+	}
 	if strings.TrimSpace(input.Project) == "" {
 		return Sample{}, errors.New("project is required")
 	}
@@ -223,9 +300,9 @@ func (s *Store) CreateSample(input CreateSampleInput, actor string) (Sample, err
 	}
 	now := time.Now().UTC()
 	var sample Sample
-	err := s.withTx(func(tx *sql.Tx) error {
+	err = s.withTx(func(tx *sql.Tx) error {
 		var exists int
-		if err := tx.QueryRow(`SELECT 1 FROM clients WHERE id = ?`, input.ClientID).Scan(&exists); err != nil {
+		if err := tx.QueryRow(`SELECT 1 FROM clients WHERE tenant_id = ? AND lab_id = ? AND id = ?`, scope.TenantID, scope.LabID, input.ClientID).Scan(&exists); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("unknown client %q", input.ClientID)
 			}
@@ -242,20 +319,20 @@ func (s *Store) CreateSample(input CreateSampleInput, actor string) (Sample, err
 			if test == "" {
 				continue
 			}
-			analyses = append(analyses, Analysis{ID: fmt.Sprintf("%s-A%02d", sampleID, i+1), Name: test})
+			analyses = append(analyses, Analysis{TenantID: scope.TenantID, LabID: scope.LabID, ID: fmt.Sprintf("%s-A%02d", sampleID, i+1), Name: test})
 		}
 		if len(analyses) == 0 {
 			return errors.New("at least one non-empty analysis is required")
 		}
-		sample = Sample{ID: sampleID, ClientID: input.ClientID, Project: strings.TrimSpace(input.Project), Matrix: strings.TrimSpace(input.Matrix), Status: StatusReceived, Analyses: analyses, CreatedAt: now, UpdatedAt: now}
+		sample = Sample{TenantID: scope.TenantID, LabID: scope.LabID, ID: sampleID, ClientID: input.ClientID, Project: strings.TrimSpace(input.Project), Matrix: strings.TrimSpace(input.Matrix), Status: StatusReceived, Analyses: analyses, CreatedAt: now, UpdatedAt: now}
 		encodedAnalyses, err := json.Marshal(sample.Analyses)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO samples(id, client_id, project, matrix, status, analyses_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, sample.ID, sample.ClientID, sample.Project, sample.Matrix, string(sample.Status), string(encodedAnalyses), formatTime(sample.CreatedAt), formatTime(sample.UpdatedAt)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO samples(tenant_id, lab_id, id, client_id, project, matrix, status, analyses_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sample.TenantID, sample.LabID, sample.ID, sample.ClientID, sample.Project, sample.Matrix, string(sample.Status), string(encodedAnalyses), formatTime(sample.CreatedAt), formatTime(sample.UpdatedAt)); err != nil {
 			return err
 		}
-		return appendAuditTx(tx, actor, "sample.created", "sample", sample.ID, map[string]any{"client_id": sample.ClientID, "analysis_count": len(sample.Analyses)})
+		return appendAuditTx(tx, scope, actor, "sample.created", "sample", sample.ID, map[string]any{"client_id": sample.ClientID, "analysis_count": len(sample.Analyses)})
 	})
 	if err != nil {
 		return Sample{}, err
@@ -264,10 +341,18 @@ func (s *Store) CreateSample(input CreateSampleInput, actor string) (Sample, err
 }
 
 func (s *Store) TransitionSample(sampleID string, next SampleStatus, actor string) error {
+	return s.TransitionSampleForScope(DefaultScope, sampleID, next, actor)
+}
+
+func (s *Store) TransitionSampleForScope(scope Scope, sampleID string, next SampleStatus, actor string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return err
+	}
 	return s.withTx(func(tx *sql.Tx) error {
-		sample, err := sampleByIDTx(tx, sampleID)
+		sample, err := sampleByIDTx(tx, scope, sampleID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("unknown sample %q", sampleID)
@@ -280,24 +365,36 @@ func (s *Store) TransitionSample(sampleID string, next SampleStatus, actor strin
 		previous := sample.Status
 		sample.Status = next
 		sample.UpdatedAt = time.Now().UTC()
-		if _, err := tx.Exec(`UPDATE samples SET status = ?, updated_at = ? WHERE id = ?`, string(sample.Status), formatTime(sample.UpdatedAt), sample.ID); err != nil {
+		if _, err := tx.Exec(`UPDATE samples SET status = ?, updated_at = ? WHERE tenant_id = ? AND lab_id = ? AND id = ?`, string(sample.Status), formatTime(sample.UpdatedAt), scope.TenantID, scope.LabID, sample.ID); err != nil {
 			return err
 		}
-		return appendAuditTx(tx, actor, "sample.transitioned", "sample", sample.ID, map[string]any{"from": previous, "to": next})
+		return appendAuditTx(tx, scope, actor, "sample.transitioned", "sample", sample.ID, map[string]any{"from": previous, "to": next})
 	})
 }
 
-func (s *Store) GetSample(id string) (Sample, bool) {
+func (s *Store) GetSample(id string) (Sample, bool) { return s.GetSampleForScope(DefaultScope, id) }
+
+func (s *Store) GetSampleForScope(scope Scope, id string) (Sample, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	sample, err := sampleByID(s.db, id)
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return Sample{}, false
+	}
+	sample, err := sampleByID(s.db, scope, id)
 	return sample, err == nil
 }
 
-func (s *Store) Clients() []Client {
+func (s *Store) Clients() []Client { return s.ClientsForScope(DefaultScope) }
+
+func (s *Store) ClientsForScope(scope Scope) []Client {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rows, err := s.db.Query(`SELECT id, name, email, created_at FROM clients ORDER BY id`)
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return nil
+	}
+	rows, err := s.db.Query(`SELECT tenant_id, lab_id, id, name, email, created_at FROM clients WHERE tenant_id = ? AND lab_id = ? ORDER BY id`, scope.TenantID, scope.LabID)
 	if err != nil {
 		return nil
 	}
@@ -306,7 +403,7 @@ func (s *Store) Clients() []Client {
 	for rows.Next() {
 		var client Client
 		var created string
-		if err := rows.Scan(&client.ID, &client.Name, &client.Email, &created); err != nil {
+		if err := rows.Scan(&client.TenantID, &client.LabID, &client.ID, &client.Name, &client.Email, &created); err != nil {
 			return nil
 		}
 		client.CreatedAt, _ = parseTime(created)
@@ -315,10 +412,16 @@ func (s *Store) Clients() []Client {
 	return clients
 }
 
-func (s *Store) Samples() []Sample {
+func (s *Store) Samples() []Sample { return s.SamplesForScope(DefaultScope) }
+
+func (s *Store) SamplesForScope(scope Scope) []Sample {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rows, err := s.db.Query(`SELECT id, client_id, project, matrix, status, analyses_json, created_at, updated_at FROM samples ORDER BY id`)
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return nil
+	}
+	rows, err := s.db.Query(`SELECT tenant_id, lab_id, id, client_id, project, matrix, status, analyses_json, created_at, updated_at FROM samples WHERE tenant_id = ? AND lab_id = ? ORDER BY id`, scope.TenantID, scope.LabID)
 	if err != nil {
 		return nil
 	}
@@ -336,12 +439,20 @@ func (s *Store) Samples() []Sample {
 }
 
 func (s *Store) AuditEvents(limit int) ([]AuditEvent, error) {
+	return s.AuditEventsForScope(DefaultScope, limit)
+}
+
+func (s *Store) AuditEventsForScope(scope Scope, limit int) ([]AuditEvent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	query := `SELECT sequence, timestamp, actor, action, entity_type, entity_id, details_json, previous_hash, hash FROM audit_events ORDER BY sequence`
-	args := []any{}
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	query := auditSelectSQL() + ` WHERE tenant_id = ? AND lab_id = ? ORDER BY sequence`
+	args := []any{scope.TenantID, scope.LabID}
 	if limit > 0 {
-		query = `SELECT sequence, timestamp, actor, action, entity_type, entity_id, details_json, previous_hash, hash FROM (SELECT * FROM audit_events ORDER BY sequence DESC LIMIT ?) ORDER BY sequence`
+		query = `SELECT tenant_id, lab_id, sequence, timestamp, actor, action, entity_type, entity_id, details_json, previous_hash, hash FROM (SELECT * FROM audit_events WHERE tenant_id = ? AND lab_id = ? ORDER BY sequence DESC LIMIT ?) ORDER BY sequence`
 		args = append(args, limit)
 	}
 	rows, err := s.db.Query(query, args...)
@@ -353,7 +464,7 @@ func (s *Store) AuditEvents(limit int) ([]AuditEvent, error) {
 }
 
 func (s *Store) VerifyAuditChain() error {
-	rows, err := s.db.Query(`SELECT sequence, timestamp, actor, action, entity_type, entity_id, details_json, previous_hash, hash FROM audit_events ORDER BY sequence`)
+	rows, err := s.db.Query(auditSelectSQL() + ` ORDER BY sequence`)
 	if err != nil {
 		return err
 	}
@@ -410,7 +521,7 @@ func nextCounter(tx *sql.Tx, key string) (int, error) {
 	return next, nil
 }
 
-func appendAuditTx(tx *sql.Tx, actor, action, entityType, entityID string, details map[string]any) error {
+func appendAuditTx(tx *sql.Tx, scope Scope, actor, action, entityType, entityID string, details map[string]any) error {
 	actor = strings.TrimSpace(actor)
 	if actor == "" {
 		actor = "system"
@@ -423,48 +534,56 @@ func appendAuditTx(tx *sql.Tx, actor, action, entityType, entityID string, detai
 	if err := tx.QueryRow(`SELECT value FROM store_meta WHERE key = 'last_hash'`).Scan(&previousHash); err != nil {
 		return err
 	}
-	event := AuditEvent{Sequence: int64(nextAudit), Timestamp: time.Now().UTC(), Actor: actor, Action: action, EntityType: entityType, EntityID: entityID, Details: details, PreviousHash: previousHash}
+	event := AuditEvent{TenantID: scope.TenantID, LabID: scope.LabID, Sequence: int64(nextAudit), Timestamp: time.Now().UTC(), Actor: actor, Action: action, EntityType: entityType, EntityID: entityID, Details: details, PreviousHash: previousHash}
 	event.Hash = hashEvent(event)
 	detailsJSON, err := json.Marshal(event.Details)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`INSERT INTO audit_events(sequence, timestamp, actor, action, entity_type, entity_id, details_json, previous_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.Sequence, formatTime(event.Timestamp), event.Actor, event.Action, event.EntityType, event.EntityID, string(detailsJSON), event.PreviousHash, event.Hash); err != nil {
+	if _, err := tx.Exec(`INSERT INTO audit_events(tenant_id, lab_id, sequence, timestamp, actor, action, entity_type, entity_id, details_json, previous_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.TenantID, event.LabID, event.Sequence, formatTime(event.Timestamp), event.Actor, event.Action, event.EntityType, event.EntityID, string(detailsJSON), event.PreviousHash, event.Hash); err != nil {
 		return err
 	}
 	_, err = tx.Exec(`UPDATE store_meta SET value = ? WHERE key = 'last_hash'`, event.Hash)
 	return err
 }
 
-type sampleScanner interface {
-	Scan(dest ...any) error
+type sampleScanner interface{ Scan(dest ...any) error }
+
+func sampleByID(db *sql.DB, scope Scope, id string) (Sample, error) {
+	return sampleByIDScanner(db.QueryRow(`SELECT tenant_id, lab_id, id, client_id, project, matrix, status, analyses_json, created_at, updated_at FROM samples WHERE tenant_id = ? AND lab_id = ? AND id = ?`, scope.TenantID, scope.LabID, id))
 }
 
-func sampleByID(db *sql.DB, id string) (Sample, error) {
-	return sampleByIDScanner(db.QueryRow(`SELECT id, client_id, project, matrix, status, analyses_json, created_at, updated_at FROM samples WHERE id = ?`, id))
-}
-
-func sampleByIDTx(tx *sql.Tx, id string) (Sample, error) {
-	return sampleByIDScanner(tx.QueryRow(`SELECT id, client_id, project, matrix, status, analyses_json, created_at, updated_at FROM samples WHERE id = ?`, id))
+func sampleByIDTx(tx *sql.Tx, scope Scope, id string) (Sample, error) {
+	return sampleByIDScanner(tx.QueryRow(`SELECT tenant_id, lab_id, id, client_id, project, matrix, status, analyses_json, created_at, updated_at FROM samples WHERE tenant_id = ? AND lab_id = ? AND id = ?`, scope.TenantID, scope.LabID, id))
 }
 
 func sampleByIDScanner(row sampleScanner) (Sample, error) {
 	var sample Sample
 	var status, analysesJSON, created, updated string
-	if err := row.Scan(&sample.ID, &sample.ClientID, &sample.Project, &sample.Matrix, &status, &analysesJSON, &created, &updated); err != nil {
+	if err := row.Scan(&sample.TenantID, &sample.LabID, &sample.ID, &sample.ClientID, &sample.Project, &sample.Matrix, &status, &analysesJSON, &created, &updated); err != nil {
 		return Sample{}, err
 	}
 	sample.Status = SampleStatus(status)
 	if err := json.Unmarshal([]byte(analysesJSON), &sample.Analyses); err != nil {
 		return Sample{}, err
 	}
+	for i := range sample.Analyses {
+		if sample.Analyses[i].TenantID == "" {
+			sample.Analyses[i].TenantID = sample.TenantID
+		}
+		if sample.Analyses[i].LabID == "" {
+			sample.Analyses[i].LabID = sample.LabID
+		}
+	}
 	sample.CreatedAt, _ = parseTime(created)
 	sample.UpdatedAt, _ = parseTime(updated)
 	return sample, nil
 }
 
-func scanSample(rows *sql.Rows) (Sample, error) {
-	return sampleByIDScanner(rows)
+func scanSample(rows *sql.Rows) (Sample, error) { return sampleByIDScanner(rows) }
+
+func auditSelectSQL() string {
+	return `SELECT tenant_id, lab_id, sequence, timestamp, actor, action, entity_type, entity_id, details_json, previous_hash, hash FROM audit_events`
 }
 
 func scanAuditEvents(rows *sql.Rows) ([]AuditEvent, error) {
@@ -472,7 +591,7 @@ func scanAuditEvents(rows *sql.Rows) ([]AuditEvent, error) {
 	for rows.Next() {
 		var event AuditEvent
 		var timestamp, detailsJSON string
-		if err := rows.Scan(&event.Sequence, &timestamp, &event.Actor, &event.Action, &event.EntityType, &event.EntityID, &detailsJSON, &event.PreviousHash, &event.Hash); err != nil {
+		if err := rows.Scan(&event.TenantID, &event.LabID, &event.Sequence, &timestamp, &event.Actor, &event.Action, &event.EntityType, &event.EntityID, &detailsJSON, &event.PreviousHash, &event.Hash); err != nil {
 			return nil, err
 		}
 		parsed, err := parseTime(timestamp)
@@ -496,20 +615,22 @@ func hashEvent(event AuditEvent) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func formatTime(t time.Time) string {
-	return t.UTC().Format(time.RFC3339Nano)
-}
+func formatTime(t time.Time) string           { return t.UTC().Format(time.RFC3339Nano) }
+func parseTime(raw string) (time.Time, error) { return time.Parse(time.RFC3339Nano, raw) }
 
-func parseTime(raw string) (time.Time, error) {
-	return time.Parse(time.RFC3339Nano, raw)
+func normalizeScope(scope Scope) (Scope, error) {
+	scope.TenantID = strings.TrimSpace(scope.TenantID)
+	scope.LabID = strings.TrimSpace(scope.LabID)
+	if scope.TenantID == "" {
+		return Scope{}, errors.New("tenant id is required")
+	}
+	if scope.LabID == "" {
+		return Scope{}, errors.New("lab id is required")
+	}
+	return scope, nil
 }
 
 func allowedTransition(current, next SampleStatus) bool {
-	order := map[SampleStatus]SampleStatus{
-		StatusReceived:   StatusInPrep,
-		StatusInPrep:     StatusInAnalysis,
-		StatusInAnalysis: StatusInReview,
-		StatusInReview:   StatusReleased,
-	}
+	order := map[SampleStatus]SampleStatus{StatusReceived: StatusInPrep, StatusInPrep: StatusInAnalysis, StatusInAnalysis: StatusInReview, StatusInReview: StatusReleased}
 	return order[current] == next
 }

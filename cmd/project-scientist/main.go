@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ type app struct {
 }
 
 type pageData struct {
+	Scope   lab.Scope
 	Clients []lab.Client
 	Samples []lab.Sample
 	Audit   []lab.AuditEvent
@@ -48,15 +50,17 @@ func (a *app) index(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	audit, _ := a.store.AuditEvents(20)
-	if err := a.tmpl.Execute(w, pageData{Clients: a.store.Clients(), Samples: a.store.Samples(), Audit: audit}); err != nil {
+	scope := scopeFromRequest(r)
+	audit, _ := a.store.AuditEventsForScope(scope, 20)
+	if err := a.tmpl.Execute(w, pageData{Scope: scope, Clients: a.store.ClientsForScope(scope), Samples: a.store.SamplesForScope(scope), Audit: audit}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
 func (a *app) apiState(w http.ResponseWriter, r *http.Request) {
-	audit, _ := a.store.AuditEvents(50)
-	writeJSON(w, pageData{Clients: a.store.Clients(), Samples: a.store.Samples(), Audit: audit}, http.StatusOK)
+	scope := scopeFromRequest(r)
+	audit, _ := a.store.AuditEventsForScope(scope, 50)
+	writeJSON(w, pageData{Scope: scope, Clients: a.store.ClientsForScope(scope), Samples: a.store.SamplesForScope(scope), Audit: audit}, http.StatusOK)
 }
 
 func (a *app) createClient(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +68,7 @@ func (a *app) createClient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	client, err := a.store.CreateClient(r.FormValue("name"), r.FormValue("email"), actor(r))
+	client, err := a.store.CreateClientForScope(scopeFromRequest(r), r.FormValue("name"), r.FormValue("email"), actor(r))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -73,7 +77,7 @@ func (a *app) createClient(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, client, http.StatusCreated)
 		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
 }
 
 func (a *app) createSample(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +86,7 @@ func (a *app) createSample(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input := lab.CreateSampleInput{ClientID: r.FormValue("client_id"), Project: r.FormValue("project"), Matrix: r.FormValue("matrix"), Tests: splitTests(r.FormValue("tests"))}
-	sample, err := a.store.CreateSample(input, actor(r))
+	sample, err := a.store.CreateSampleForScope(scopeFromRequest(r), input, actor(r))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -104,7 +108,7 @@ func (a *app) transitionSample(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := a.store.TransitionSample(sampleID, lab.SampleStatus(r.FormValue("status")), actor(r)); err != nil {
+	if err := a.store.TransitionSampleForScope(scopeFromRequest(r), sampleID, lab.SampleStatus(r.FormValue("status")), actor(r)); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -112,7 +116,7 @@ func (a *app) transitionSample(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"status": "ok"}, http.StatusOK)
 		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
 }
 
 func splitTests(raw string) []string {
@@ -134,6 +138,32 @@ func actor(r *http.Request) string {
 		return actor
 	}
 	return "lab-dev"
+}
+
+func scopeFromRequest(r *http.Request) lab.Scope {
+	scope := lab.DefaultScope
+	if tenantID := strings.TrimSpace(r.Header.Get("X-PSC-Tenant-ID")); tenantID != "" {
+		scope.TenantID = tenantID
+	} else if tenantID := strings.TrimSpace(r.FormValue("tenant_id")); tenantID != "" {
+		scope.TenantID = tenantID
+	} else if tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id")); tenantID != "" {
+		scope.TenantID = tenantID
+	}
+	if labID := strings.TrimSpace(r.Header.Get("X-PSC-Lab-ID")); labID != "" {
+		scope.LabID = labID
+	} else if labID := strings.TrimSpace(r.FormValue("lab_id")); labID != "" {
+		scope.LabID = labID
+	} else if labID := strings.TrimSpace(r.URL.Query().Get("lab_id")); labID != "" {
+		scope.LabID = labID
+	}
+	return scope
+}
+
+func scopedHome(scope lab.Scope) string {
+	values := url.Values{}
+	values.Set("tenant_id", scope.TenantID)
+	values.Set("lab_id", scope.LabID)
+	return "/?" + values.Encode()
 }
 
 func wantsJSON(r *http.Request) bool {

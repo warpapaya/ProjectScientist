@@ -1,11 +1,49 @@
 package lab
 
 import (
+	"database/sql"
 	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestSQLiteMigrationAddsTenantLabColumnsBeforeScopedIndexes(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "project-scientist.db")
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy sqlite: %v", err)
+	}
+	legacySchema := []string{
+		`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);`,
+		`CREATE TABLE store_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
+		`CREATE TABLE clients (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, created_at TEXT NOT NULL);`,
+		`CREATE TABLE samples (id TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES clients(id), project TEXT NOT NULL, matrix TEXT NOT NULL, status TEXT NOT NULL, analyses_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`,
+		`CREATE TABLE audit_events (sequence INTEGER PRIMARY KEY, timestamp TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL, previous_hash TEXT NOT NULL, hash TEXT NOT NULL UNIQUE);`,
+		`INSERT INTO schema_migrations(version, applied_at) VALUES (1, '2026-06-01T00:00:00Z');`,
+		`INSERT INTO store_meta(key, value) VALUES ('next_client', '2'), ('next_sample', '1'), ('next_audit', '1'), ('last_hash', '');`,
+		`INSERT INTO clients(id, name, email, created_at) VALUES ('C-00001', 'Legacy Client', 'legacy@example.test', '2026-06-01T00:00:00Z');`,
+	}
+	for _, stmt := range legacySchema {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("install legacy schema: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	store, err := OpenSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("migrate legacy store: %v", err)
+	}
+	defer store.Close()
+
+	clients := store.ClientsForScope(DefaultScope)
+	if len(clients) != 1 || clients[0].TenantID != DefaultScope.TenantID || clients[0].LabID != DefaultScope.LabID {
+		t.Fatalf("legacy clients not backfilled into default scope: %#v", clients)
+	}
+}
 
 func TestSQLiteStoreCommitsDomainStateAndAuditAtomically(t *testing.T) {
 	dir := t.TempDir()
