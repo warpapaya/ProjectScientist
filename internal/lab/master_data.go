@@ -78,7 +78,7 @@ type ClientDefaultsInput struct {
 	DefaultTests                                          []string
 }
 
-func (s *Store) CreateSiteForScope(scope Scope, input SiteInput, actor string) (Site, error) {
+func (s *Store) CreateSiteForScope(scope Scope, input SiteInput, actor ActorContext) (Site, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	scope, err := normalizeScope(scope)
@@ -107,12 +107,18 @@ func (s *Store) CreateSiteForScope(scope Scope, input SiteInput, actor string) (
 		if _, err := tx.Exec(`INSERT INTO sites(tenant_id, lab_id, id, client_id, name, division, address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, site.TenantID, site.LabID, site.ID, site.ClientID, site.Name, site.Division, site.Address, formatTime(site.CreatedAt)); err != nil {
 			return err
 		}
-		return appendAuditTx(tx, scope, actor, "site.created", "site", site.ID, map[string]any{"client_id": site.ClientID, "name": site.Name})
+		if allowed, err := authorizeOperationTx(tx, scope, OperationClientUpdate, actor, AuditResource{Type: "site", ID: site.ID}, map[string]any{"client_id": site.ClientID}); err != nil || !allowed {
+			if err != nil {
+				return err
+			}
+			return ErrAuthorizationDenied
+		}
+		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "site.created", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "site", ID: site.ID}, Details: map[string]any{"client_id": site.ClientID, "name": site.Name}})
 	})
 	return site, err
 }
 
-func (s *Store) CreateContactForScope(scope Scope, input ContactInput, actor string) (Contact, error) {
+func (s *Store) CreateContactForScope(scope Scope, input ContactInput, actor ActorContext) (Contact, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	scope, err := normalizeScope(scope)
@@ -147,12 +153,18 @@ func (s *Store) CreateContactForScope(scope Scope, input ContactInput, actor str
 		if _, err := tx.Exec(`INSERT INTO contacts(tenant_id, lab_id, id, client_id, site_id, name, email, phone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, contact.TenantID, contact.LabID, contact.ID, contact.ClientID, contact.SiteID, contact.Name, contact.Email, contact.Phone, formatTime(contact.CreatedAt)); err != nil {
 			return err
 		}
-		return appendAuditTx(tx, scope, actor, "contact.created", "contact", contact.ID, map[string]any{"client_id": contact.ClientID, "site_id": contact.SiteID, "name": contact.Name})
+		if allowed, err := authorizeOperationTx(tx, scope, OperationContactCreate, actor, AuditResource{Type: "contact", ID: contact.ID}, map[string]any{"client_id": contact.ClientID}); err != nil || !allowed {
+			if err != nil {
+				return err
+			}
+			return ErrAuthorizationDenied
+		}
+		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "contact.created", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "contact", ID: contact.ID}, Details: map[string]any{"client_id": contact.ClientID, "site_id": contact.SiteID, "name": contact.Name}})
 	})
 	return contact, err
 }
 
-func (s *Store) AssignContactRoleForScope(scope Scope, input ContactRoleInput, actor string) (ContactRole, error) {
+func (s *Store) AssignContactRoleForScope(scope Scope, input ContactRoleInput, actor ActorContext) (ContactRole, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	scope, err := normalizeScope(scope)
@@ -181,12 +193,18 @@ func (s *Store) AssignContactRoleForScope(scope Scope, input ContactRoleInput, a
 		if _, err := tx.Exec(`INSERT INTO contact_roles(tenant_id, lab_id, id, contact_id, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`, role.TenantID, role.LabID, role.ID, role.ContactID, role.Role, formatTime(role.CreatedAt)); err != nil {
 			return err
 		}
-		return appendAuditTx(tx, scope, actor, "contact.role.assigned", "contact_role", role.ID, map[string]any{"contact_id": role.ContactID, "role": role.Role})
+		if allowed, err := authorizeOperationTx(tx, scope, OperationContactUpdate, actor, AuditResource{Type: "contact_role", ID: role.ID}, map[string]any{"contact_id": role.ContactID}); err != nil || !allowed {
+			if err != nil {
+				return err
+			}
+			return ErrAuthorizationDenied
+		}
+		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "contact.role.assigned", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "contact_role", ID: role.ID}, Details: map[string]any{"contact_id": role.ContactID, "role": role.Role}})
 	})
 	return role, err
 }
 
-func (s *Store) CreateProjectForScope(scope Scope, input ProjectInput, actor string) (Project, error) {
+func (s *Store) CreateProjectForScope(scope Scope, input ProjectInput, actor ActorContext) (Project, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	scope, err := normalizeScope(scope)
@@ -225,12 +243,18 @@ func (s *Store) CreateProjectForScope(scope Scope, input ProjectInput, actor str
 		if _, err := tx.Exec(`INSERT INTO projects(tenant_id, lab_id, id, client_id, site_id, name, work_order, default_matrix, default_tests_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, project.TenantID, project.LabID, project.ID, project.ClientID, project.SiteID, project.Name, project.WorkOrder, project.DefaultMatrix, string(testsJSON), formatTime(project.CreatedAt)); err != nil {
 			return err
 		}
-		return appendAuditTx(tx, scope, actor, "project.created", "project", project.ID, map[string]any{"client_id": project.ClientID, "site_id": project.SiteID, "work_order": project.WorkOrder})
+		if allowed, err := authorizeOperationTx(tx, scope, OperationProjectCreate, actor, AuditResource{Type: "project", ID: project.ID}, map[string]any{"client_id": project.ClientID}); err != nil || !allowed {
+			if err != nil {
+				return err
+			}
+			return ErrAuthorizationDenied
+		}
+		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "project.created", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "project", ID: project.ID}, Details: map[string]any{"client_id": project.ClientID, "site_id": project.SiteID, "work_order": project.WorkOrder}})
 	})
 	return project, err
 }
 
-func (s *Store) UpsertClientDefaultsForScope(scope Scope, input ClientDefaultsInput, actor string) (ClientDefaults, error) {
+func (s *Store) UpsertClientDefaultsForScope(scope Scope, input ClientDefaultsInput, actor ActorContext) (ClientDefaults, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	scope, err := normalizeScope(scope)
@@ -266,7 +290,13 @@ func (s *Store) UpsertClientDefaultsForScope(scope Scope, input ClientDefaultsIn
 		if _, err := tx.Exec(`INSERT INTO client_defaults(tenant_id, lab_id, client_id, report_template, invoice_email, default_matrix, default_tests_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(tenant_id, lab_id, client_id) DO UPDATE SET report_template = excluded.report_template, invoice_email = excluded.invoice_email, default_matrix = excluded.default_matrix, default_tests_json = excluded.default_tests_json, updated_at = excluded.updated_at`, defaults.TenantID, defaults.LabID, defaults.ClientID, defaults.ReportTemplate, defaults.InvoiceEmail, defaults.DefaultMatrix, string(testsJSON), formatTime(defaults.CreatedAt), formatTime(defaults.UpdatedAt)); err != nil {
 			return err
 		}
-		return appendAuditTx(tx, scope, actor, "client.defaults.upserted", "client", defaults.ClientID, map[string]any{"default_matrix": defaults.DefaultMatrix, "test_count": len(defaults.DefaultTests)})
+		if allowed, err := authorizeOperationTx(tx, scope, OperationClientUpdate, actor, AuditResource{Type: "client", ID: defaults.ClientID}, map[string]any{"default_matrix": defaults.DefaultMatrix}); err != nil || !allowed {
+			if err != nil {
+				return err
+			}
+			return ErrAuthorizationDenied
+		}
+		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "client.defaults.upserted", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "client", ID: defaults.ClientID}, Details: map[string]any{"default_matrix": defaults.DefaultMatrix, "test_count": len(defaults.DefaultTests)}})
 	})
 	return defaults, err
 }

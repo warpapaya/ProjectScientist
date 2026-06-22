@@ -122,7 +122,7 @@ func TestTenantLabBoundaryScopesReadsWritesAndAudit(t *testing.T) {
 	alpha := Scope{TenantID: "tenant-alpha", LabID: "water-lab"}
 	beta := Scope{TenantID: "tenant-beta", LabID: "water-lab"}
 
-	client, err := store.CreateClientForScope(alpha, "Alpha Client", "alpha@example.test", "friday")
+	client, err := store.CreateClientForScope(alpha, "Alpha Client", "alpha@example.test", testScopedActor("friday", alpha.TenantID))
 	if err != nil {
 		t.Fatalf("create alpha client: %v", err)
 	}
@@ -130,11 +130,11 @@ func TestTenantLabBoundaryScopesReadsWritesAndAudit(t *testing.T) {
 		t.Fatalf("client missing tenant/lab scope: %#v", client)
 	}
 
-	if _, err := store.CreateSampleForScope(beta, CreateSampleInput{ClientID: client.ID, Project: "Cross write", Matrix: "Water", Tests: []string{"pH"}}, "mallory"); err == nil {
+	if _, err := store.CreateSampleForScope(beta, CreateSampleInput{ClientID: client.ID, Project: "Cross write", Matrix: "Water", Tests: []string{"pH"}}, testScopedActor("mallory", beta.TenantID)); err == nil {
 		t.Fatalf("expected cross-tenant sample write to fail closed")
 	}
 
-	sample, err := store.CreateSampleForScope(alpha, CreateSampleInput{ClientID: client.ID, Project: "Alpha Project", Matrix: "Water", Tests: []string{"pH"}}, "friday")
+	sample, err := store.CreateSampleForScope(alpha, CreateSampleInput{ClientID: client.ID, Project: "Alpha Project", Matrix: "Water", Tests: []string{"pH"}}, testScopedActor("friday", alpha.TenantID))
 	if err != nil {
 		t.Fatalf("create alpha sample: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestTenantLabBoundaryScopesReadsWritesAndAudit(t *testing.T) {
 	if _, ok := store.GetSampleForScope(beta, sample.ID); ok {
 		t.Fatalf("cross-tenant sample read should fail closed")
 	}
-	if err := store.TransitionSampleForScope(beta, sample.ID, StatusInPrep, "mallory"); err == nil {
+	if err := store.TransitionSampleForScope(beta, sample.ID, StatusInPrep, testScopedActor("mallory", beta.TenantID)); err == nil {
 		t.Fatalf("cross-tenant transition should fail closed")
 	}
 	if got := store.SamplesForScope(beta); len(got) != 0 {
@@ -173,7 +173,7 @@ func TestTenantLabBoundaryScopesReadsWritesAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("beta audit events: %v", err)
 	}
-	if len(betaEvents) != 0 {
-		t.Fatalf("beta audit should not include alpha events: %#v", betaEvents)
+	if len(betaEvents) != 1 || betaEvents[0].Outcome != AuditOutcomeDenied || betaEvents[0].Reason != "scope_mismatch" {
+		t.Fatalf("beta audit should only include denied cross-scope transition proof: %#v", betaEvents)
 	}
 }

@@ -41,6 +41,8 @@ type Scope struct {
 
 func defaultScope() Scope { return Scope{TenantID: DefaultTenantID, LabID: DefaultLabID} }
 
+var DefaultScope = defaultScope()
+
 func normalizeScope(scope Scope) (Scope, error) {
 	scope.TenantID = strings.TrimSpace(scope.TenantID)
 	scope.LabID = strings.TrimSpace(scope.LabID)
@@ -148,7 +150,7 @@ type StoreRepository interface {
 	Close() error
 }
 
-const sqliteSchemaVersion = 2
+const sqliteSchemaVersion = 3
 
 var sqliteMigrations = []string{
 	`PRAGMA journal_mode = WAL;`,
@@ -198,8 +200,61 @@ var sqliteMigrations = []string{
 		hash TEXT NOT NULL,
 		created_at TEXT NOT NULL
 	);`,
-	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_audit', '1'), ('last_hash', '');`,
-	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
+	`CREATE TABLE IF NOT EXISTS sites (
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		id TEXT PRIMARY KEY,
+		client_id TEXT NOT NULL REFERENCES clients(id),
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		division TEXT NOT NULL DEFAULT '',
+		address TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS contacts (
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		id TEXT PRIMARY KEY,
+		client_id TEXT NOT NULL REFERENCES clients(id),
+		site_id TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		email TEXT NOT NULL DEFAULT '',
+		phone TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS contact_roles (
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		id TEXT PRIMARY KEY,
+		contact_id TEXT NOT NULL REFERENCES contacts(id),
+		role TEXT NOT NULL CHECK (length(trim(role)) > 0),
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS projects (
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		id TEXT PRIMARY KEY,
+		client_id TEXT NOT NULL REFERENCES clients(id),
+		site_id TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		work_order TEXT NOT NULL DEFAULT '',
+		default_matrix TEXT NOT NULL DEFAULT '',
+		default_tests_json TEXT NOT NULL DEFAULT '[]',
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS client_defaults (
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		client_id TEXT NOT NULL REFERENCES clients(id),
+		report_template TEXT NOT NULL DEFAULT '',
+		invoice_email TEXT NOT NULL DEFAULT '',
+		default_matrix TEXT NOT NULL DEFAULT '',
+		default_tests_json TEXT NOT NULL DEFAULT '[]',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		PRIMARY KEY (tenant_id, lab_id, client_id)
+	);`,
+	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('last_hash', '');`,
+	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (3, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
 }
 
 var sqlitePostMigrationIndexes = []string{
@@ -208,6 +263,10 @@ var sqlitePostMigrationIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_samples_client_id ON samples(client_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_audit_events_sequence ON audit_events(sequence);`,
 	`CREATE INDEX IF NOT EXISTS idx_audit_events_scope ON audit_events(tenant_id, lab_id, sequence);`,
+	`CREATE INDEX IF NOT EXISTS idx_sites_scope_client_id ON sites(tenant_id, lab_id, client_id);`,
+	`CREATE INDEX IF NOT EXISTS idx_contacts_scope_client_id ON contacts(tenant_id, lab_id, client_id);`,
+	`CREATE INDEX IF NOT EXISTS idx_contact_roles_scope_contact_id ON contact_roles(tenant_id, lab_id, contact_id);`,
+	`CREATE INDEX IF NOT EXISTS idx_projects_scope_client_id ON projects(tenant_id, lab_id, client_id);`,
 }
 
 func OpenStore(statePath, _ string) (*Store, error) { return OpenSQLiteStore(statePath) }
@@ -239,6 +298,9 @@ func openSQLiteStore(dbPath string, verify bool) (*Store, error) {
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// DB exposes the underlying SQLite handle for local operator maintenance commands.
+func (s *Store) DB() *sql.DB { return s.db }
 
 func (s *Store) migrate(ctx context.Context) error {
 	for _, stmt := range sqliteMigrations {
@@ -309,6 +371,7 @@ func (s *Store) migrateV1AuditSchema(ctx context.Context) error {
 		{"outcome", `outcome TEXT NOT NULL DEFAULT 'allowed'`},
 		{"reason", `reason TEXT NOT NULL DEFAULT ''`},
 		{"correlation_id", `correlation_id TEXT NOT NULL DEFAULT ''`},
+		{"details_json", `details_json TEXT NOT NULL DEFAULT '{}'`},
 	} {
 		if err := addAuditColumn(column.name, column.ddl); err != nil {
 			return err

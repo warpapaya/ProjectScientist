@@ -203,11 +203,12 @@ func seedDB(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	defer store.Close()
-	client, err := store.CreateClient("Clearline Synthetic Lab", "synthetic@example.test", "psc-operator-seed")
+	seedActor := cliActor("psc-operator-seed", lab.RoleAdmin)
+	client, err := store.CreateClient("Clearline Synthetic Lab", "synthetic@example.test", seedActor)
 	if err != nil {
 		return err
 	}
-	if _, err := store.CreateSample(lab.CreateSampleInput{ClientID: client.ID, Project: "Synthetic Drinking Water Compliance", Matrix: "Water", Tests: []string{"pH", "Turbidity", "Lead"}}, "psc-operator-seed"); err != nil {
+	if _, err := store.CreateSample(lab.CreateSampleInput{ClientID: client.ID, Project: "Synthetic Drinking Water Compliance", Matrix: "Water", Tests: []string{"pH", "Turbidity", "Lead"}}, seedActor); err != nil {
 		return err
 	}
 	fmt.Fprintf(stdout, "seed ok db=%s client_id=%s\n", *dbPath, client.ID)
@@ -562,14 +563,20 @@ func demoResetActor(r *http.Request) lab.ActorContext {
 
 func actor(r *http.Request) lab.ActorContext {
 	requestID := requestID(r)
+	scope := scopeFromRequest(r)
+	roles := []string{string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser)}
+	memberships := []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: roles}}
+	if scope.TenantID != lab.DefaultTenantID {
+		memberships = append(memberships, lab.TenantMembership{TenantID: scope.TenantID, Roles: roles})
+	}
 	return lab.MustActorContext(lab.ActorContextInput{
 		UserID:            "lab-dev",
 		DisplayName:       "lab-dev",
 		AuthProvider:      "local-dev",
 		RequestID:         requestID,
 		CorrelationID:     requestID,
-		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser)}}},
-		Roles:             []string{string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser)},
+		TenantMemberships: memberships,
+		Roles:             roles,
 	})
 }
 
@@ -605,6 +612,22 @@ func requestID(r *http.Request) string {
 		requestID = "local-http-request"
 	}
 	return requestID
+}
+
+func cliActor(userID string, roles ...lab.Role) lab.ActorContext {
+	roleStrings := make([]string, 0, len(roles))
+	for _, role := range roles {
+		roleStrings = append(roleStrings, string(role))
+	}
+	return lab.MustActorContext(lab.ActorContextInput{
+		UserID:            userID,
+		DisplayName:       userID,
+		AuthProvider:      "local-cli",
+		RequestID:         "local-cli-request",
+		CorrelationID:     "local-cli-request",
+		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: roleStrings}},
+		Roles:             roleStrings,
+	})
 }
 
 func wantsJSON(r *http.Request) bool {

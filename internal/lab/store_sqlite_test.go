@@ -75,7 +75,7 @@ func TestSQLiteMigrationAddsMissingAuditColumnsBeforeVerification(t *testing.T) 
 	}
 	defer store.Close()
 
-	client, err := store.CreateClient("Migrated Audit Lab", "audit@example.test", "operator")
+	client, err := store.CreateClient("Migrated Audit Lab", "audit@example.test", testActor("operator"))
 	if err != nil {
 		t.Fatalf("create client after migration: %v", err)
 	}
