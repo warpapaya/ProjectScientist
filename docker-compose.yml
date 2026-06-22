@@ -1,0 +1,14 @@
+services:
+  project-scientist:
+    build: .
+    container_name: project-scientist-dev
+    ports:
+      - "127.0.0.1:8097:8080"
+    environment:
+      PSC_ADDR: ":8080"
+      PSC_DATA_DIR: "/data"
+    volumes:
+      - project-scientist-data:/data
+
+volumes:
+  project-scientist-data:

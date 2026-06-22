@@ -1,0 +1,5 @@
+.git
+.hermes
+.DS_Store
+/data
+*.tmp

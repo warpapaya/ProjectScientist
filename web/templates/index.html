@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Project Scientist</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Clearline lab test lane</p>
+      <h1>Project Scientist</h1>
+    </div>
+    <div class="status-pill">Local dev • append-only audit</div>
+  </header>
+
+  <main class="shell">
+    <section class="panel hero">
+      <div>
+        <p class="eyebrow">Today</p>
+        <h2>{{len .Samples}} samples • {{len .Clients}} clients</h2>
+        <p>Low-click intake, workflow movement, and audit visibility in one screen. Not production-ready. That would be reckless, and we are trying to avoid building a prettier disaster.</p>
+      </div>
+      <div class="quickkeys">
+        <span>⌘/Ctrl + K: intake</span>
+        <span>Shift + A: audit</span>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <form class="panel form" method="post" action="/api/clients">
+        <h2>New client</h2>
+        <input name="actor" value="lab-dev" aria-label="Actor">
+        <input name="name" placeholder="Client name" required>
+        <input name="email" placeholder="Primary contact email">
+        <button>Create client</button>
+      </form>
+
+      <form class="panel form" method="post" action="/api/samples" id="intake">
+        <h2>Fast sample intake</h2>
+        <input name="actor" value="lab-dev" aria-label="Actor">
+        <select name="client_id" required>
+          <option value="">Client…</option>
+          {{range .Clients}}<option value="{{.ID}}">{{.Name}} ({{.ID}})</option>{{end}}
+        </select>
+        <input name="project" placeholder="Project / COC reference" required>
+        <input name="matrix" placeholder="Matrix e.g. water, soil, air">
+        <textarea name="tests" placeholder="Analyses: pH, Turbidity, Lead" required></textarea>
+        <button>Receive sample</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Workflow board</h2>
+        <p>One-click legal transitions only. The store rejects illegal jumps and audits every accepted move.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>Client</th><th>Project</th><th>Matrix</th><th>Analyses</th><th>Status</th><th>Next action</th></tr></thead>
+          <tbody>
+          {{range .Samples}}
+            <tr>
+              <td><strong>{{.ID}}</strong></td>
+              <td>{{.ClientID}}</td>
+              <td>{{.Project}}</td>
+              <td>{{.Matrix}}</td>
+              <td>{{len .Analyses}}</td>
+              <td><span class="status {{.Status}}">{{.Status}}</span></td>
+              <td>{{template "transition" .}}</td>
+            </tr>
+          {{else}}
+            <tr><td colspan="7" class="empty">No samples yet. Create a client, then receive the first sample.</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <section class="panel">
+        <h2>Clients</h2>
+        <ul class="list">
+          {{range .Clients}}<li><strong>{{.ID}}</strong><span>{{.Name}}</span><small>{{.Email}}</small></li>{{else}}<li class="empty">No clients yet.</li>{{end}}
+        </ul>
+      </section>
+      <section class="panel" id="audit">
+        <h2>Audit tail</h2>
+        <ol class="audit">
+          {{range .Audit}}<li><span>#{{.Sequence}}</span><strong>{{.Action}}</strong><small>{{.Actor}} • {{.EntityID}}</small><code>{{slice .Hash 0 12}}</code></li>{{else}}<li class="empty">No audit events yet.</li>{{end}}
+        </ol>
+      </section>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
+
+{{define "transition"}}
+  {{$next := ""}}
+  {{if eq .Status "received"}}{{$next = "in_prep"}}{{end}}
+  {{if eq .Status "in_prep"}}{{$next = "in_analysis"}}{{end}}
+  {{if eq .Status "in_analysis"}}{{$next = "in_review"}}{{end}}
+  {{if eq .Status "in_review"}}{{$next = "released"}}{{end}}
+  {{if $next}}
+    <form class="inline" method="post" action="/api/samples/{{.ID}}/transition">
+      <input type="hidden" name="actor" value="lab-dev">
+      <input type="hidden" name="status" value="{{$next}}">
+      <button>Move to {{$next}}</button>
+    </form>
+  {{else}}
+    <span class="done">Released</span>
+  {{end}}
+{{end}}
