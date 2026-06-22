@@ -1,4 +1,4 @@
-.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke image-review dev-up dev-down dev-reset dev-seed
+.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke image-review dev-up dev-down dev-reset dev-seed demo-reset
 
 DEV_HEALTH_URL ?= http://127.0.0.1:8097/healthz
 DEV_BASE_URL ?= http://127.0.0.1:8097
@@ -25,7 +25,8 @@ docker-build:
 	$(COMPOSE) build project-scientist
 
 docker-smoke: dev-up dev-seed
-	@curl -fsS $(DEV_BASE_URL)/api/state | grep -q 'Clearline Synthetic Lab'
+	@curl -fsS $(DEV_BASE_URL)/api/state | grep -q 'Okefenokee Synthetic Water Authority'
+	@curl -fsS $(DEV_BASE_URL)/api/state | grep -q 'S-000001'
 	@printf 'docker smoke ok\n'
 
 image-review: docker-build
@@ -45,3 +46,5 @@ dev-reset:
 
 dev-seed:
 	@./scripts/dev-seed.sh $(DEV_BASE_URL)
+
+demo-reset: dev-up dev-seed

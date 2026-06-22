@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -117,6 +118,56 @@ func TestTransitionSampleIgnoresSpoofedActorHeaderAndFormForAuditIdentity(t *tes
 		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 	}
 	assertLatestAuditIdentity(t, store, "sample.transitioned", "req-transition-spoof")
+}
+
+func TestDemoResetEndpointSeedsFixtureAndIsRerunnable(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app := &app{store: store, demoResetEnabled: true, fixturePath: filepath.Join("..", "..", "fixtures", "mvp_synthetic_lab.json")}
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/demo/reset", nil)
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("X-PSC-Request-ID", "demo-reset-test")
+		rr := httptest.NewRecorder()
+
+		app.demoReset(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("run %d expected 200, got %d body=%s", i+1, rr.Code, rr.Body.String())
+		}
+		var summary lab.SyntheticDemoSeedSummary
+		if err := json.NewDecoder(rr.Body).Decode(&summary); err != nil {
+			t.Fatalf("decode summary: %v", err)
+		}
+		if summary.ClientID != "C-00001" || summary.SampleID != "S-000001" || summary.ClientName != "Okefenokee Synthetic Water Authority" || summary.AnalysisCount != 4 {
+			t.Fatalf("unexpected summary after run %d: %#v", i+1, summary)
+		}
+	}
+	if got := len(store.Clients()); got != 1 {
+		t.Fatalf("expected rerun to leave one client, got %d", got)
+	}
+	if got := len(store.Samples()); got != 1 {
+		t.Fatalf("expected rerun to leave one sample, got %d", got)
+	}
+}
+
+func TestDemoResetEndpointIsDisabledUnlessExplicitlyEnabled(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app := &app{store: store, fixturePath: filepath.Join("..", "..", "fixtures", "mvp_synthetic_lab.json")}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/demo/reset", nil)
+	rr := httptest.NewRecorder()
+	app.demoReset(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected disabled endpoint to 404, got %d body=%s", rr.Code, rr.Body.String())
+	}
 }
 
 func assertLatestAuditIdentity(t *testing.T, store *lab.Store, action, requestID string) {
