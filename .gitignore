@@ -1,3 +1,10 @@
 data/
+var/
+tmp/
+bin/
+build/
+dist/
+coverage.out
+*.log
 *.tmp
 .DS_Store

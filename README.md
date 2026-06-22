@@ -8,30 +8,57 @@ Current status: foundation prototype only. Useful for local architecture pressur
 
 ## Principles
 
-- Few external dependencies: current app is Go standard library only.
+- Few external dependencies: current app adds only the SQLite driver needed for transactional persistence.
+- SQLite-first local persistence with domain state and audit events committed in one transaction.
 - Local-first development in Docker.
 - Dense, low-click UI for daily lab work.
-- Defensible audit logging: every mutation writes an append-only JSONL event with actor, entity, action, timestamp, previous hash, and hash.
+- Defensible audit logging: every mutation writes an append-only hash-chained audit event with actor, entity, action, timestamp, previous hash, and hash.
 - Workflow transitions are enforced by the domain layer, not just UI buttons.
 
 ## Run locally
 
+This is a lab-only local development workflow, not a public/customer production path.
+
 ```bash
-docker compose up --build
-open http://localhost:8097
+make dev-up
+open http://127.0.0.1:8097
 ```
 
 Health check:
 
 ```bash
-curl -fsS http://localhost:8097/healthz
+curl -fsS http://127.0.0.1:8097/healthz
 ```
 
-Run tests:
+Run gates:
 
 ```bash
-go test ./...
+make fmt-check
+make test
+make vet
+make docker-test
+make docker-smoke
 ```
+
+Seed synthetic local-only data through the running dev API:
+
+```bash
+make dev-seed
+```
+
+Stop the local container while preserving the named development data volume:
+
+```bash
+make dev-down
+```
+
+Reset the local dev container and named volume when you intentionally want a clean prototype state:
+
+```bash
+make dev-reset
+```
+
+Full workflow, persistence/reset caveats, CI candidate notes, image review, and stop-lines are documented in [docs/dev.md](docs/dev.md).
 
 ## Implemented in bootstrap
 
@@ -40,7 +67,7 @@ go test ./...
 - Analysis list attached to sample.
 - Legal workflow path: received -> in_prep -> in_analysis -> in_review -> released.
 - Illegal transition rejection.
-- Append-only hash-chained audit JSONL.
+- Append-only hash-chained audit events stored in SQLite with domain state transactionally.
 - Single-screen local UI with quick intake and audit tail.
 - Dockerfile + docker-compose for local Citadel development.
 

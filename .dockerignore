@@ -1,5 +1,14 @@
 .git
 .hermes
 .DS_Store
+/.idea
+/.vscode
+/bin
+/build
+/coverage.out
 /data
+/dist
+/tmp
+/var
+*.log
 *.tmp

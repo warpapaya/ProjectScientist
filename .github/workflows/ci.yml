@@ -1,0 +1,38 @@
+name: ci-candidate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Host gates
+        run: |
+          make fmt-check
+          make test
+          make vet
+
+      - name: Compose config
+        run: docker compose config --quiet
+
+      - name: Docker test stage
+        run: make docker-test
+
+      - name: Runtime image build
+        run: make docker-build

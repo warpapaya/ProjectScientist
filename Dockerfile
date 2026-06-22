@@ -1,11 +1,23 @@
-FROM golang:1.26-alpine AS build
+# Project Scientist local-only development/runtime image.
+# Base images are pinned by digest for deterministic rebuilds; update deliberately.
+FROM golang:1.26-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648 AS build
+RUN apk add --no-cache gcc musl-dev
 WORKDIR /src
-COPY go.mod ./
+COPY go.* ./
 COPY cmd ./cmd
 COPY internal ./internal
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/project-scientist ./cmd/project-scientist
+RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w -linkmode external -extldflags '-static'" -o /out/project-scientist ./cmd/project-scientist
 
-FROM alpine:3.22
+FROM golang:1.26-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648 AS test
+RUN apk add --no-cache gcc musl-dev
+WORKDIR /src
+COPY go.* ./
+COPY cmd ./cmd
+COPY internal ./internal
+CMD ["go", "test", "-mod=readonly", "./..."]
+
+FROM alpine:3.22@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601 AS runtime
+LABEL org.opencontainers.image.source="https://github.com/warpapaya/ProjectScientist"       org.opencontainers.image.description="Project Scientist local lab-test prototype; not for customer/prod data"
 RUN addgroup -S scientist && adduser -S scientist -G scientist && mkdir -p /data /app/web && chown -R scientist:scientist /data /app
 WORKDIR /app
 COPY --from=build /out/project-scientist /app/project-scientist

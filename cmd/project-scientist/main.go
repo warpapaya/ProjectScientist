@@ -26,7 +26,7 @@ type pageData struct {
 func main() {
 	dataDir := getenv("PSC_DATA_DIR", "/data")
 	addr := getenv("PSC_ADDR", ":8080")
-	store, err := lab.OpenStore(filepath.Join(dataDir, "state.json"), filepath.Join(dataDir, "audit.jsonl"))
+	store, err := lab.OpenSQLiteStore(filepath.Join(dataDir, "project-scientist.db"))
 	if err != nil {
 		log.Fatalf("open store: %v", err)
 	}

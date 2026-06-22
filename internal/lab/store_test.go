@@ -1,19 +1,17 @@
 package lab
 
 import (
-	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestCreateSampleAssignsIDWorkflowAndAuditEvent(t *testing.T) {
-	dir := t.TempDir()
-	store, err := OpenStore(filepath.Join(dir, "state.json"), filepath.Join(dir, "audit.jsonl"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
+	defer store.Close()
 
 	client, err := store.CreateClient("Clearline Demo Lab", "qa@example.test", "friday")
 	if err != nil {
@@ -39,7 +37,10 @@ func TestCreateSampleAssignsIDWorkflowAndAuditEvent(t *testing.T) {
 		t.Fatalf("expected 2 analyses, got %d", len(sample.Analyses))
 	}
 
-	events := readAuditEvents(t, filepath.Join(dir, "audit.jsonl"))
+	events, err := store.AuditEvents(0)
+	if err != nil {
+		t.Fatalf("audit events: %v", err)
+	}
 	if got := events[len(events)-1].Action; got != "sample.created" {
 		t.Fatalf("expected last audit event sample.created, got %q", got)
 	}
@@ -49,11 +50,11 @@ func TestCreateSampleAssignsIDWorkflowAndAuditEvent(t *testing.T) {
 }
 
 func TestWorkflowTransitionRequiresAllowedPathAndAudits(t *testing.T) {
-	dir := t.TempDir()
-	store, err := OpenStore(filepath.Join(dir, "state.json"), filepath.Join(dir, "audit.jsonl"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
+	defer store.Close()
 	client, _ := store.CreateClient("CENLA Demo", "cenla@example.test", "ashley")
 	sample, _ := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "Metals", Matrix: "Soil", Tests: []string{"Lead"}}, "ashley")
 
@@ -70,7 +71,10 @@ func TestWorkflowTransitionRequiresAllowedPathAndAudits(t *testing.T) {
 		t.Fatalf("expected released sample, got %#v", updated)
 	}
 
-	events := readAuditEvents(t, filepath.Join(dir, "audit.jsonl"))
+	events, err := store.AuditEvents(0)
+	if err != nil {
+		t.Fatalf("audit events: %v", err)
+	}
 	var transitions int
 	for _, event := range events {
 		if event.Action == "sample.transitioned" {
@@ -83,15 +87,18 @@ func TestWorkflowTransitionRequiresAllowedPathAndAudits(t *testing.T) {
 }
 
 func TestAuditLogIsHashChained(t *testing.T) {
-	dir := t.TempDir()
-	store, err := OpenStore(filepath.Join(dir, "state.json"), filepath.Join(dir, "audit.jsonl"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
+	defer store.Close()
 	_, _ = store.CreateClient("Tindall Demo", "armando@example.test", "armando")
 	_, _ = store.CreateClient("RJ Lee Demo", "demo@example.test", "friday")
 
-	events := readAuditEvents(t, filepath.Join(dir, "audit.jsonl"))
+	events, err := store.AuditEvents(0)
+	if err != nil {
+		t.Fatalf("audit events: %v", err)
+	}
 	if len(events) < 2 {
 		t.Fatalf("expected at least 2 events")
 	}
@@ -103,21 +110,4 @@ func TestAuditLogIsHashChained(t *testing.T) {
 			t.Fatalf("event %d missing hash", i)
 		}
 	}
-}
-
-func readAuditEvents(t *testing.T, path string) []AuditEvent {
-	t.Helper()
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read audit: %v", err)
-	}
-	var events []AuditEvent
-	for _, line := range strings.Split(strings.TrimSpace(string(content)), "\n") {
-		var event AuditEvent
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
-			t.Fatalf("decode audit event %q: %v", line, err)
-		}
-		events = append(events, event)
-	}
-	return events
 }
