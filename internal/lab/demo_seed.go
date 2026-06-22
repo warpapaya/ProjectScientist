@@ -49,6 +49,9 @@ func (s *Store) ResetAndSeedSyntheticDemo(fixturePath string, actor ActorContext
 	if err != nil {
 		return SyntheticDemoSeedSummary{}, err
 	}
+	if err := s.AuthorizeOperationForScope(defaultScope(), OperationAdminConfigure, actor, AuditResource{Type: "synthetic-demo", ID: "reset"}, map[string]any{"fixture_id": fixture.FixtureID}); err != nil {
+		return SyntheticDemoSeedSummary{}, err
+	}
 	if err := s.resetLocalDemoStore(); err != nil {
 		return SyntheticDemoSeedSummary{}, err
 	}

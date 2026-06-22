@@ -411,8 +411,12 @@ func (a *app) demoReset(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	summary, err := a.store.ResetAndSeedSyntheticDemo(a.fixturePath, actor(r))
+	summary, err := a.store.ResetAndSeedSyntheticDemo(a.fixturePath, demoResetActor(r))
 	if err != nil {
+		if errors.Is(err, lab.ErrAuthorizationDenied) {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -543,11 +547,21 @@ func splitTests(raw string) []string {
 	return out
 }
 
+func demoResetActor(r *http.Request) lab.ActorContext {
+	requestID := requestID(r)
+	return lab.MustActorContext(lab.ActorContextInput{
+		UserID:            "local-demo-reset-admin",
+		DisplayName:       "local-demo-reset-admin",
+		AuthProvider:      "local-dev-demo-reset",
+		RequestID:         requestID,
+		CorrelationID:     requestID,
+		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleAdmin)}}},
+		Roles:             []string{string(lab.RoleAdmin)},
+	})
+}
+
 func actor(r *http.Request) lab.ActorContext {
-	requestID := strings.TrimSpace(r.Header.Get("X-PSC-Request-ID"))
-	if requestID == "" {
-		requestID = "local-http-request"
-	}
+	requestID := requestID(r)
 	return lab.MustActorContext(lab.ActorContextInput{
 		UserID:            "lab-dev",
 		DisplayName:       "lab-dev",
@@ -560,7 +574,7 @@ func actor(r *http.Request) lab.ActorContext {
 }
 
 func scopeFromRequest(r *http.Request) lab.Scope {
-	scope := lab.DefaultScope
+	scope := lab.Scope{TenantID: lab.DefaultTenantID, LabID: lab.DefaultLabID}
 	if tenantID := strings.TrimSpace(r.Header.Get("X-PSC-Tenant-ID")); tenantID != "" {
 		scope.TenantID = tenantID
 	} else if tenantID := strings.TrimSpace(r.FormValue("tenant_id")); tenantID != "" {
@@ -583,6 +597,14 @@ func scopedHome(scope lab.Scope) string {
 	values.Set("tenant_id", scope.TenantID)
 	values.Set("lab_id", scope.LabID)
 	return "/?" + values.Encode()
+}
+
+func requestID(r *http.Request) string {
+	requestID := strings.TrimSpace(r.Header.Get("X-PSC-Request-ID"))
+	if requestID == "" {
+		requestID = "local-http-request"
+	}
+	return requestID
 }
 
 func wantsJSON(r *http.Request) bool {
