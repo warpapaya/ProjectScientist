@@ -1,0 +1,11 @@
+{
+  "psc-mvp-001-acceptance-contract": "t_a795c506",
+  "psc-mvp-002-synthetic-fixtures": "t_34eec448",
+  "psc-mvp-003-critical-path-ux-click-budget": "t_5589edce",
+  "psc-mvp-004-demo-seed-reset": "t_28171cbe",
+  "psc-mvp-005-e2e-vertical-slice": "t_5dccefa7",
+  "psc-mvp-006-result-report-ux-polish": "t_bd0ad28b",
+  "psc-mvp-007-e2e-smoke-negative-tests": "t_17d3ed9d",
+  "psc-mvp-008-audit-security-challenge": "t_da2044cc",
+  "psc-mvp-009-readiness-review": "t_e3fc96fc"
+}
