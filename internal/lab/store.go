@@ -71,6 +71,10 @@ type Analysis struct {
 	Name                   string `json:"name"`
 	ServiceID              string `json:"service_id,omitempty"`
 	ProfileID              string `json:"profile_id,omitempty"`
+	DepartmentID           string `json:"department_id,omitempty"`
+	DepartmentName         string `json:"department_name,omitempty"`
+	MethodID               string `json:"method_id,omitempty"`
+	MethodName             string `json:"method_name,omitempty"`
 	Method                 string `json:"method,omitempty"`
 	Result                 string `json:"result,omitempty"`
 	Units                  string `json:"units,omitempty"`
@@ -383,7 +387,25 @@ var sqliteMigrations = []string{
 		created_at TEXT NOT NULL,
 		UNIQUE(tenant_id, lab_id, version)
 	);`,
-	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('last_hash', '');`,
+	`CREATE TABLE IF NOT EXISTS analysis_request_lines (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		sample_id TEXT NOT NULL REFERENCES samples(id),
+		service_id TEXT NOT NULL DEFAULT '',
+		profile_id TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		status TEXT NOT NULL,
+		department_id TEXT NOT NULL DEFAULT '',
+		department_name TEXT NOT NULL DEFAULT '',
+		method_id TEXT NOT NULL DEFAULT '',
+		method_name TEXT NOT NULL DEFAULT '',
+		catalog_snapshot_id TEXT NOT NULL DEFAULT '',
+		catalog_snapshot_version INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);`,
+	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('next_analysis_request_line', '1'), ('last_hash', '');`,
 	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (5, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
 }
 
@@ -407,6 +429,7 @@ var sqlitePostMigrationIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_analysis_profile_services_order ON analysis_profile_services(profile_id, sort_order);`,
 	`CREATE INDEX IF NOT EXISTS idx_sample_reference_scope_kind_order ON sample_reference_items(tenant_id, lab_id, kind, active, sort_order, name);`,
 	`CREATE INDEX IF NOT EXISTS idx_catalog_snapshots_scope_version ON catalog_snapshots(tenant_id, lab_id, version);`,
+	`CREATE INDEX IF NOT EXISTS idx_analysis_request_lines_scope_sample ON analysis_request_lines(tenant_id, lab_id, sample_id);`,
 }
 
 func OpenStore(statePath, _ string) (*Store, error) { return OpenSQLiteStore(statePath) }
@@ -779,6 +802,9 @@ func (s *Store) CreateSampleForScope(scope Scope, input CreateSampleInput, actor
 			return err
 		}
 		if _, err := tx.Exec(`INSERT INTO samples(id, tenant_id, lab_id, client_id, project_id, project, client_sample_id, lab_sample_id, matrix, matrix_reference_id, container_id, preservative_id, storage_location_id, received_condition_id, sampled_at, received_at, priority, comments, status, analyses_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sample.ID, sample.TenantID, sample.LabID, sample.ClientID, sample.ProjectID, sample.Project, sample.ClientSampleID, sample.LabSampleID, sample.Matrix, sample.MatrixReferenceID, sample.ContainerID, sample.PreservativeID, sample.StorageLocationID, sample.ReceivedConditionID, formatOptionalTime(sample.SampledAt), formatOptionalTime(sample.ReceivedAt), string(sample.Priority), sample.Comments, string(sample.Status), string(encodedAnalyses), formatTime(sample.CreatedAt), formatTime(sample.UpdatedAt)); err != nil {
+			return err
+		}
+		if err := createAnalysisRequestLinesForSampleTx(tx, scope, sample); err != nil {
 			return err
 		}
 		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "sample.created", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "sample", ID: sample.ID}, Details: map[string]any{"client_id": sample.ClientID, "project_id": sample.ProjectID, "client_sample_id": sample.ClientSampleID, "lab_sample_id": sample.LabSampleID, "analysis_count": len(sample.Analyses)}})

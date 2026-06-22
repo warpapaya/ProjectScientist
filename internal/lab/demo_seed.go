@@ -109,10 +109,11 @@ func (s *Store) resetLocalDemoStore() error {
 		for _, stmt := range []string{
 			`DELETE FROM audit_checkpoints`,
 			`DELETE FROM audit_events`,
+			`DELETE FROM analysis_request_lines`,
 			`DELETE FROM samples`,
 			`DELETE FROM clients`,
 			`DELETE FROM sample_reference_items`,
-			`UPDATE store_meta SET value = '1' WHERE key IN ('next_client', 'next_sample', 'next_audit', 'next_sample_reference')`,
+			`UPDATE store_meta SET value = '1' WHERE key IN ('next_client', 'next_sample', 'next_analysis_request_line', 'next_audit', 'next_sample_reference')`,
 			`UPDATE store_meta SET value = '' WHERE key = 'last_hash'`,
 		} {
 			if _, err := tx.Exec(stmt); err != nil {
