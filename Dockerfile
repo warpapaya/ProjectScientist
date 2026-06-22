@@ -20,6 +20,7 @@ COPY go.* ./
 RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
+COPY docs ./docs
 COPY fixtures ./fixtures
 COPY web ./web
 CMD ["go", "test", "-mod=readonly", "./..."]
