@@ -40,6 +40,7 @@ const (
 	OperationResultUpdate  Operation = "result.update"
 	OperationResultReview  Operation = "result.review"
 	OperationResultRelease Operation = "result.release"
+	OperationQCRelate      Operation = "qc.relate"
 
 	OperationReportGenerate Operation = "report.generate"
 	OperationReportRelease  Operation = "report.release"
@@ -75,6 +76,7 @@ var operationAllowedRoles = map[Operation][]Role{
 	OperationResultUpdate:  {RoleAdmin, RoleLabManager, RoleAnalyst},
 	OperationResultReview:  {RoleAdmin, RoleLabManager, RoleReviewer},
 	OperationResultRelease: {RoleAdmin, RoleReportReleaser},
+	OperationQCRelate:      {RoleAdmin, RoleLabManager, RoleAnalyst, RoleReviewer},
 
 	OperationReportGenerate: {RoleAdmin, RoleLabManager, RoleReviewer, RoleReportReleaser},
 	OperationReportRelease:  {RoleAdmin, RoleReportReleaser},
