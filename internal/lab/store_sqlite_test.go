@@ -45,6 +45,45 @@ func TestSQLiteMigrationAddsTenantLabColumnsBeforeScopedIndexes(t *testing.T) {
 	}
 }
 
+func TestSQLiteMigrationAddsMissingAuditColumnsBeforeVerification(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "project-scientist.db")
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy sqlite: %v", err)
+	}
+	legacySchema := []string{
+		`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);`,
+		`CREATE TABLE store_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
+		`CREATE TABLE clients (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, created_at TEXT NOT NULL);`,
+		`CREATE TABLE samples (id TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES clients(id), project TEXT NOT NULL, matrix TEXT NOT NULL, status TEXT NOT NULL, analyses_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`,
+		`CREATE TABLE audit_events (sequence INTEGER PRIMARY KEY, timestamp TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, previous_hash TEXT NOT NULL, hash TEXT NOT NULL UNIQUE);`,
+		`INSERT INTO schema_migrations(version, applied_at) VALUES (1, '2026-06-01T00:00:00Z');`,
+		`INSERT INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_audit', '1'), ('last_hash', '');`,
+	}
+	for _, stmt := range legacySchema {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("install legacy schema: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	store, err := OpenSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("migrate legacy audit store: %v", err)
+	}
+	defer store.Close()
+
+	client, err := store.CreateClient("Migrated Audit Lab", "audit@example.test", "operator")
+	if err != nil {
+		t.Fatalf("create client after migration: %v", err)
+	}
+	if client.ID != "C-00001" {
+		t.Fatalf("client ID after migration = %s", client.ID)
+	}
+}
+
 func TestSQLiteStoreCommitsDomainStateAndAuditAtomically(t *testing.T) {
 	dir := t.TempDir()
 	store, err := OpenSQLiteStore(filepath.Join(dir, "project-scientist.db"))

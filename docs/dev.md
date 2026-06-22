@@ -140,16 +140,26 @@ It does not deploy anything, publish images, touch customer/prod data, or make c
 ## Workflow targets
 
 ```text
-make test         # host go test -mod=readonly ./...
-make vet          # host go vet ./...
-make fmt-check    # verify gofmt cleanliness
-make ci           # local aggregate: host gates + Docker test/build
-make docker-test  # Docker/Compose test lane
-make docker-build # build runtime container image
-make docker-smoke # start local app, seed synthetic data, verify API state
-make image-review # print local image size/user/cmd/layers
-make dev-up       # build/start local dev container and health check 127.0.0.1:8097
-make dev-seed     # seed synthetic local-only demo data via API
-make dev-down     # stop local dev container, preserve named volume
-make dev-reset    # destructive local reset of the named dev volume
+make test             # host go test -mod=readonly ./...
+make vet              # host go vet ./...
+make fmt-check        # verify gofmt cleanliness
+make ci               # local aggregate: host gates + Docker test/build
+make docker-test      # Docker/Compose test lane
+make docker-build     # build runtime container image
+make docker-smoke     # start local app, seed synthetic data, verify API state
+make image-review     # print local image size/user/cmd/layers
+make ops-db-migrate   # run SQLite migrations for PSC_DB (default data/project-scientist.db)
+make ops-db-status    # print schema/client/sample/audit counts for PSC_DB
+make ops-audit-verify # verify the local audit hash chain
+make ops-seed         # seed synthetic local-only data into PSC_DB
+make ops-reset        # destructive local reset of PSC_DB, requires force in wrapper
+make ops-backup       # create PSC_BACKUP from PSC_DB with SQLite VACUUM INTO
+make ops-restore      # destructive local restore from PSC_BACKUP into PSC_DB
+make ops-smoke        # HTTP smoke against DEV_BASE_URL
+make dev-up           # build/start local dev container and health check 127.0.0.1:8097
+make dev-seed         # seed synthetic local-only demo data via API
+make dev-down         # stop local dev container, preserve named volume
+make dev-reset        # destructive local reset of the named dev volume
 ```
+
+See [operations.md](operations.md) for command semantics, stop-lines, backup/restore behavior, and the logs/metrics plan.

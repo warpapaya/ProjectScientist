@@ -188,6 +188,9 @@ func openSQLiteStore(dbPath string, verify bool) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// DB exposes the underlying SQLite handle for local operator maintenance commands.
+func (s *Store) DB() *sql.DB { return s.db }
+
 func (s *Store) migrate(ctx context.Context) error {
 	for _, stmt := range sqliteMigrations {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -201,6 +204,9 @@ func (s *Store) migrate(ctx context.Context) error {
 		{"samples", "lab_id", "ALTER TABLE samples ADD COLUMN lab_id TEXT NOT NULL DEFAULT 'lab-dev'"},
 		{"audit_events", "tenant_id", "ALTER TABLE audit_events ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'local-dev'"},
 		{"audit_events", "lab_id", "ALTER TABLE audit_events ADD COLUMN lab_id TEXT NOT NULL DEFAULT 'lab-dev'"},
+		{"audit_events", "entity_type", "ALTER TABLE audit_events ADD COLUMN entity_type TEXT NOT NULL DEFAULT 'unknown'"},
+		{"audit_events", "entity_id", "ALTER TABLE audit_events ADD COLUMN entity_id TEXT NOT NULL DEFAULT 'unknown'"},
+		{"audit_events", "details_json", "ALTER TABLE audit_events ADD COLUMN details_json TEXT NOT NULL DEFAULT '{}'"},
 	} {
 		ok, err := s.hasColumn(ctx, col.table, col.name)
 		if err != nil {
