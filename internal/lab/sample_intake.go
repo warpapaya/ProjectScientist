@@ -142,7 +142,7 @@ func buildAnalysesTx(tx *sql.Tx, scope Scope, sampleID string, input CreateSampl
 			}
 			return
 		}
-		analysis := Analysis{ID: fmt.Sprintf("%s-A%02d", sampleID, len(analyses)+1), TenantID: scope.TenantID, LabID: scope.LabID, Name: service.Name, ServiceID: service.ID, ProfileID: profileID, Method: service.MethodName, Units: service.UnitSymbol}
+		analysis := Analysis{ID: fmt.Sprintf("%s-A%02d", sampleID, len(analyses)+1), TenantID: scope.TenantID, LabID: scope.LabID, Name: service.Name, ServiceID: service.ID, ProfileID: profileID, DepartmentID: service.DepartmentID, DepartmentName: service.DepartmentName, MethodID: service.MethodID, MethodName: service.MethodName, Method: service.MethodName, Units: service.UnitSymbol}
 		if hasSnapshot {
 			analysis.CatalogSnapshotID = snapshot.ID
 			analysis.CatalogSnapshotVersion = snapshot.Version
