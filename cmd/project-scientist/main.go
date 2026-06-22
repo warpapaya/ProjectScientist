@@ -117,7 +117,7 @@ func serve() error {
 	mux.HandleFunc("POST /api/sample-intake-templates", application.createSampleIntakeTemplate)
 	mux.HandleFunc("POST /api/sample-intake-templates/", application.createSamplesFromTemplate)
 	mux.HandleFunc("POST /api/samples", application.createSample)
-	mux.HandleFunc("POST /api/samples/", application.transitionSample)
+	mux.HandleFunc("POST /api/samples/", application.sampleAction)
 	mux.HandleFunc("POST /api/catalog/departments", application.createCatalogDepartment)
 	mux.HandleFunc("POST /api/catalog/units", application.createCatalogUnit)
 	mux.HandleFunc("POST /api/catalog/methods", application.createCatalogMethod)
@@ -638,6 +638,18 @@ func (a *app) createSample(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+func (a *app) sampleAction(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(r.URL.Path, "/transition") {
+		a.transitionSample(w, r)
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/custody-events") {
+		a.recordCustodyEvent(w, r)
+		return
+	}
+	http.NotFound(w, r)
+}
+
 func (a *app) transitionSample(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasSuffix(r.URL.Path, "/transition") {
 		http.NotFound(w, r)
@@ -654,6 +666,36 @@ func (a *app) transitionSample(w http.ResponseWriter, r *http.Request) {
 	}
 	if wantsJSON(r) {
 		writeJSON(w, map[string]string{"status": "ok"}, http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+}
+
+func (a *app) recordCustodyEvent(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasSuffix(r.URL.Path, "/custody-events") {
+		http.NotFound(w, r)
+		return
+	}
+	sampleID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/samples/"), "/custody-events")
+	if sampleID == "" || strings.Contains(sampleID, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	event, err := a.store.RecordCustodyEventForScope(scopeFromRequest(r), lab.CustodyEventInput{SampleID: sampleID, Type: lab.CustodyEventType(r.FormValue("custody_type")), Location: r.FormValue("custody_location"), Reason: r.FormValue("custody_reason"), OccurredAt: parseOptionalRequestTime(r.FormValue("custody_occurred_at"))}, actor(r))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, lab.ErrAuthorizationDenied) {
+			status = http.StatusForbidden
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	if wantsJSON(r) {
+		writeJSON(w, event, http.StatusCreated)
 		return
 	}
 	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)

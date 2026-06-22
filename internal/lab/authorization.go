@@ -35,6 +35,7 @@ const (
 	OperationSampleIntake     Operation = "sample.intake"
 	OperationSampleUpdate     Operation = "sample.update"
 	OperationSampleTransition Operation = "sample.transition"
+	OperationSampleCustody    Operation = "sample.custody"
 
 	OperationResultEntry   Operation = "result.entry"
 	OperationResultUpdate  Operation = "result.update"
@@ -71,6 +72,7 @@ var operationAllowedRoles = map[Operation][]Role{
 	OperationSampleIntake:     {RoleAdmin, RoleLabManager},
 	OperationSampleUpdate:     {RoleAdmin, RoleLabManager, RoleAnalyst},
 	OperationSampleTransition: {RoleAdmin, RoleLabManager, RoleAnalyst},
+	OperationSampleCustody:    {RoleAdmin, RoleLabManager, RoleAnalyst},
 
 	OperationResultEntry:   {RoleAdmin, RoleLabManager, RoleAnalyst},
 	OperationResultUpdate:  {RoleAdmin, RoleLabManager, RoleAnalyst},

@@ -111,6 +111,7 @@ type Sample struct {
 	Status              SampleStatus      `json:"status"`
 	Analyses            []Analysis        `json:"analyses"`
 	Containers          []SampleContainer `json:"containers,omitempty"`
+	CustodyEvents       []CustodyEvent    `json:"custody_events,omitempty"`
 	CreatedAt           time.Time         `json:"created_at"`
 	UpdatedAt           time.Time         `json:"updated_at"`
 }
@@ -484,7 +485,23 @@ var sqliteMigrations = []string{
 		notes TEXT NOT NULL DEFAULT '',
 		created_at TEXT NOT NULL
 	);`,
-	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('next_analysis_request_line', '1'), ('next_sample_intake_template', '1'), ('next_qc_sample_relationship', '1'), ('last_hash', '');`,
+	`CREATE TABLE IF NOT EXISTS custody_events (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		sample_id TEXT NOT NULL REFERENCES samples(id),
+		type TEXT NOT NULL CHECK (type IN ('received','transferred','split','stored','disposed','returned')),
+		actor_json TEXT NOT NULL,
+		occurred_at TEXT NOT NULL,
+		location TEXT NOT NULL CHECK (length(trim(location)) > 0),
+		reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+		sequence INTEGER NOT NULL,
+		created_at TEXT NOT NULL,
+		UNIQUE(sample_id, sequence)
+	);`,
+	`CREATE TRIGGER IF NOT EXISTS custody_events_immutable_update BEFORE UPDATE ON custody_events BEGIN SELECT RAISE(ABORT, 'custody history is immutable'); END;`,
+	`CREATE TRIGGER IF NOT EXISTS custody_events_immutable_delete BEFORE DELETE ON custody_events BEGIN SELECT RAISE(ABORT, 'custody history is immutable'); END;`,
+	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('next_analysis_request_line', '1'), ('next_sample_intake_template', '1'), ('next_qc_sample_relationship', '1'), ('next_custody_event', '1'), ('last_hash', '');`,
 	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (6, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
 }
 
@@ -512,6 +529,7 @@ var sqlitePostMigrationIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_sample_intake_templates_scope_client ON sample_intake_templates(tenant_id, lab_id, client_id, name);`,
 	`CREATE INDEX IF NOT EXISTS idx_qc_sample_relationships_scope_qc ON qc_sample_relationships(tenant_id, lab_id, qc_sample_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_qc_sample_relationships_scope_related ON qc_sample_relationships(tenant_id, lab_id, related_sample_id);`,
+	`CREATE INDEX IF NOT EXISTS idx_custody_events_scope_sample ON custody_events(tenant_id, lab_id, sample_id, sequence);`,
 }
 
 func OpenStore(statePath, _ string) (*Store, error) { return OpenSQLiteStore(statePath) }
@@ -1022,6 +1040,11 @@ func (s *Store) SamplesForScope(scope Scope) []Sample {
 		if err != nil {
 			return nil
 		}
+		custodyEvents, err := custodyEventsForSampleDB(s.db, scope, sample.ID)
+		if err != nil {
+			return nil
+		}
+		sample.CustodyEvents = custodyEvents
 		samples = append(samples, sample)
 	}
 	sort.Slice(samples, func(i, j int) bool { return samples[i].ID < samples[j].ID })
@@ -1313,10 +1336,22 @@ type sampleScanner interface{ Scan(dest ...any) error }
 const sampleSelectSQL = `SELECT id, tenant_id, lab_id, client_id, project_id, project, client_sample_id, lab_sample_id, matrix, matrix_reference_id, container_id, preservative_id, storage_location_id, received_condition_id, containers_json, sampled_at, received_at, priority, comments, status, analyses_json, created_at, updated_at`
 
 func sampleByID(db *sql.DB, id string) (Sample, error) {
-	return sampleByIDScanner(db.QueryRow(sampleSelectSQL+` FROM samples WHERE id = ?`, id))
+	sample, err := sampleByIDScanner(db.QueryRow(sampleSelectSQL+` FROM samples WHERE id = ?`, id))
+	if err != nil {
+		return Sample{}, err
+	}
+	custodyEvents, err := custodyEventsForSampleDB(db, Scope{TenantID: sample.TenantID, LabID: sample.LabID}, sample.ID)
+	if err != nil {
+		return Sample{}, err
+	}
+	sample.CustodyEvents = custodyEvents
+	return sample, nil
 }
 func sampleByIDTx(tx *sql.Tx, id string) (Sample, error) {
 	return sampleByIDScanner(tx.QueryRow(sampleSelectSQL+` FROM samples WHERE id = ?`, id))
+}
+func sampleByIDForScopeTx(tx *sql.Tx, scope Scope, id string) (Sample, error) {
+	return sampleByIDScanner(tx.QueryRow(sampleSelectSQL+` FROM samples WHERE tenant_id = ? AND lab_id = ? AND id = ?`, scope.TenantID, scope.LabID, id))
 }
 
 func sampleByIDScanner(row sampleScanner) (Sample, error) {
