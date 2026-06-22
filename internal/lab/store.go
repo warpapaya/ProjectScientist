@@ -138,9 +138,9 @@ type Store struct {
 }
 
 type StoreRepository interface {
-	CreateClient(name, email string, actor any) (Client, error)
-	CreateSample(input CreateSampleInput, actor any) (Sample, error)
-	TransitionSample(sampleID string, next SampleStatus, actor any) error
+	CreateClient(name, email string, actor ActorContext) (Client, error)
+	CreateSample(input CreateSampleInput, actor ActorContext) (Sample, error)
+	TransitionSample(sampleID string, next SampleStatus, actor ActorContext) error
 	GetSample(id string) (Sample, bool)
 	Clients() []Client
 	Samples() []Sample
@@ -386,7 +386,7 @@ func (s *Store) rebuildLegacyAuditRows(ctx context.Context, legacyEntityColumns 
 		if resourceID == "" {
 			resourceID = fmt.Sprintf("legacy-%06d", row.sequence)
 		}
-		actor := actorContextFrom(row.actor, defaultScope(), fmt.Sprintf("audit-%06d", row.sequence))
+		actor := legacyActorContextFromString(row.actor, defaultScope(), fmt.Sprintf("audit-%06d", row.sequence))
 		event := AuditEvent{EventID: fmt.Sprintf("audit-%06d", row.sequence), TenantID: DefaultTenantID, LabID: DefaultLabID, Timestamp: parsed, Actor: actor.UserID, ActorContext: actor, Resource: AuditResource{Type: resourceType, ID: resourceID}, Action: row.action, Outcome: AuditOutcomeAllowed, CorrelationID: actor.CorrelationID, Sequence: row.sequence, Details: map[string]any{}, PreviousHash: previousHash}
 		if strings.TrimSpace(row.detailsJSON) != "" {
 			if err := json.Unmarshal([]byte(row.detailsJSON), &event.Details); err != nil {
@@ -422,11 +422,11 @@ func (s *Store) rebuildLegacyAuditRows(ctx context.Context, legacyEntityColumns 
 	return nil
 }
 
-func (s *Store) CreateClient(name, email string, actor any) (Client, error) {
+func (s *Store) CreateClient(name, email string, actor ActorContext) (Client, error) {
 	return s.CreateClientForScope(defaultScope(), name, email, actor)
 }
 
-func (s *Store) CreateClientForScope(scope Scope, name, email string, actor any) (Client, error) {
+func (s *Store) CreateClientForScope(scope Scope, name, email string, actor ActorContext) (Client, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	scope, err := normalizeScope(scope)
@@ -456,11 +456,11 @@ func (s *Store) CreateClientForScope(scope Scope, name, email string, actor any)
 	return client, nil
 }
 
-func (s *Store) CreateSample(input CreateSampleInput, actor any) (Sample, error) {
+func (s *Store) CreateSample(input CreateSampleInput, actor ActorContext) (Sample, error) {
 	return s.CreateSampleForScope(defaultScope(), input, actor)
 }
 
-func (s *Store) CreateSampleForScope(scope Scope, input CreateSampleInput, actor any) (Sample, error) {
+func (s *Store) CreateSampleForScope(scope Scope, input CreateSampleInput, actor ActorContext) (Sample, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	scope, err := normalizeScope(scope)
@@ -518,11 +518,11 @@ func (s *Store) CreateSampleForScope(scope Scope, input CreateSampleInput, actor
 	return sample, nil
 }
 
-func (s *Store) TransitionSample(sampleID string, next SampleStatus, actor any) error {
+func (s *Store) TransitionSample(sampleID string, next SampleStatus, actor ActorContext) error {
 	return s.TransitionSampleForScope(defaultScope(), sampleID, next, actor)
 }
 
-func (s *Store) TransitionSampleForScope(scope Scope, sampleID string, next SampleStatus, actor any) error {
+func (s *Store) TransitionSampleForScope(scope Scope, sampleID string, next SampleStatus, actor ActorContext) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	scope, err := normalizeScope(scope)
@@ -796,7 +796,7 @@ func nextCounter(tx *sql.Tx, key string) (int, error) {
 
 type auditWrite struct {
 	Scope    Scope
-	Actor    any
+	Actor    ActorContext
 	Action   string
 	Outcome  AuditOutcome
 	Reason   string
@@ -817,7 +817,7 @@ func appendAuditTx(tx *sql.Tx, write auditWrite) error {
 	if err := tx.QueryRow(`SELECT value FROM store_meta WHERE key = 'last_hash'`).Scan(&previousHash); err != nil {
 		return err
 	}
-	actor := actorContextFrom(write.Actor, scope, fmt.Sprintf("audit-%06d", nextAudit))
+	actor := normalizeActorContext(write.Actor, fmt.Sprintf("audit-%06d", nextAudit))
 	event := AuditEvent{EventID: fmt.Sprintf("audit-%06d", nextAudit), TenantID: scope.TenantID, LabID: scope.LabID, Timestamp: time.Now().UTC(), Actor: actor.UserID, ActorContext: actor, Resource: write.Resource, Action: strings.TrimSpace(write.Action), Outcome: write.Outcome, Reason: strings.TrimSpace(write.Reason), CorrelationID: actor.CorrelationID, Sequence: int64(nextAudit), Details: nonNilMap(write.Details), PreviousHash: previousHash}
 	event.Hash = hashEvent(event)
 	if err := ValidateAuditEvent(event); err != nil {
@@ -845,28 +845,25 @@ func appendAuditTx(tx *sql.Tx, write auditWrite) error {
 	return err
 }
 
-func actorContextFrom(input any, scope Scope, fallbackRequestID string) ActorContext {
-	switch actor := input.(type) {
-	case ActorContext:
-		if actor.RequestID == "" {
-			actor.RequestID = fallbackRequestID
-		}
-		if actor.CorrelationID == "" {
-			actor.CorrelationID = actor.RequestID
-		}
-		if actor.DisplayNameSnapshot == "" {
-			actor.DisplayNameSnapshot = actor.UserID
-		}
-		return actor
-	case string:
-		userID := strings.TrimSpace(actor)
-		if userID == "" {
-			userID = "system"
-		}
-		return MustActorContext(ActorContextInput{UserID: userID, DisplayName: userID, TenantMemberships: []TenantMembership{{TenantID: scope.TenantID}}, RequestID: fallbackRequestID, CorrelationID: fallbackRequestID})
-	default:
-		return MustActorContext(ActorContextInput{UserID: "system", DisplayName: "system", TenantMemberships: []TenantMembership{{TenantID: scope.TenantID}}, RequestID: fallbackRequestID, CorrelationID: fallbackRequestID})
+func normalizeActorContext(actor ActorContext, fallbackRequestID string) ActorContext {
+	if actor.RequestID == "" {
+		actor.RequestID = fallbackRequestID
 	}
+	if actor.CorrelationID == "" {
+		actor.CorrelationID = actor.RequestID
+	}
+	if actor.DisplayNameSnapshot == "" {
+		actor.DisplayNameSnapshot = actor.UserID
+	}
+	return actor
+}
+
+func legacyActorContextFromString(input string, scope Scope, fallbackRequestID string) ActorContext {
+	userID := strings.TrimSpace(input)
+	if userID == "" {
+		userID = "system"
+	}
+	return MustActorContext(ActorContextInput{UserID: userID, DisplayName: userID, TenantMemberships: []TenantMembership{{TenantID: scope.TenantID}}, RequestID: fallbackRequestID, CorrelationID: fallbackRequestID})
 }
 
 func (s *Store) latestCheckpoint() (AuditCheckpoint, bool, error) {

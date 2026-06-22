@@ -13,7 +13,7 @@ func TestCreateSampleAssignsIDWorkflowAndAuditEvent(t *testing.T) {
 	}
 	defer store.Close()
 
-	client, err := store.CreateClient("Clearline Demo Lab", "qa@example.test", "friday")
+	client, err := store.CreateClient("Clearline Demo Lab", "qa@example.test", testActor("friday"))
 	if err != nil {
 		t.Fatalf("create client: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestCreateSampleAssignsIDWorkflowAndAuditEvent(t *testing.T) {
 		Project:  "Drinking Water Compliance",
 		Matrix:   "Water",
 		Tests:    []string{"pH", "Turbidity"},
-	}, "friday")
+	}, testActor("friday"))
 	if err != nil {
 		t.Fatalf("create sample: %v", err)
 	}
@@ -55,14 +55,14 @@ func TestWorkflowTransitionRequiresAllowedPathAndAudits(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	client, _ := store.CreateClient("CENLA Demo", "cenla@example.test", "ashley")
-	sample, _ := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "Metals", Matrix: "Soil", Tests: []string{"Lead"}}, "ashley")
+	client, _ := store.CreateClient("CENLA Demo", "cenla@example.test", testActor("ashley"))
+	sample, _ := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "Metals", Matrix: "Soil", Tests: []string{"Lead"}}, testActor("ashley"))
 
-	if err := store.TransitionSample(sample.ID, StatusReleased, "ashley"); err == nil {
+	if err := store.TransitionSample(sample.ID, StatusReleased, testActor("ashley")); err == nil {
 		t.Fatalf("expected direct received -> released transition to fail")
 	}
 	for _, status := range []SampleStatus{StatusInPrep, StatusInAnalysis, StatusInReview, StatusReleased} {
-		if err := store.TransitionSample(sample.ID, status, "ashley"); err != nil {
+		if err := store.TransitionSample(sample.ID, status, testActor("ashley")); err != nil {
 			t.Fatalf("transition to %s: %v", status, err)
 		}
 	}
@@ -92,8 +92,8 @@ func TestAuditLogIsHashChained(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	_, _ = store.CreateClient("Tindall Demo", "armando@example.test", "armando")
-	_, _ = store.CreateClient("RJ Lee Demo", "demo@example.test", "friday")
+	_, _ = store.CreateClient("Tindall Demo", "armando@example.test", testActor("armando"))
+	_, _ = store.CreateClient("RJ Lee Demo", "demo@example.test", testActor("friday"))
 
 	events, err := store.AuditEvents(0)
 	if err != nil {
