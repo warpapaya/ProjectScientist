@@ -114,6 +114,8 @@ func serve() error {
 	mux.HandleFunc("POST /api/contact-roles", application.assignContactRole)
 	mux.HandleFunc("POST /api/projects", application.createProject)
 	mux.HandleFunc("POST /api/client-defaults", application.upsertClientDefaults)
+	mux.HandleFunc("POST /api/sample-intake-templates", application.createSampleIntakeTemplate)
+	mux.HandleFunc("POST /api/sample-intake-templates/", application.createSamplesFromTemplate)
 	mux.HandleFunc("POST /api/samples", application.createSample)
 	mux.HandleFunc("POST /api/samples/", application.transitionSample)
 	mux.HandleFunc("POST /api/catalog/departments", application.createCatalogDepartment)
@@ -529,6 +531,61 @@ func (a *app) upsertClientDefaults(w http.ResponseWriter, r *http.Request) {
 	}
 	defaults, err := a.store.UpsertClientDefaultsForScope(scopeFromRequest(r), lab.ClientDefaultsInput{ClientID: r.FormValue("client_id"), ReportTemplate: r.FormValue("report_template"), InvoiceEmail: r.FormValue("invoice_email"), DefaultMatrix: r.FormValue("default_matrix"), DefaultTests: splitTests(r.FormValue("default_tests"))}, actor(r))
 	writeMutationResponse(w, r, defaults, err)
+}
+
+func (a *app) createSampleIntakeTemplate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	tmpl, err := a.store.CreateSampleIntakeTemplateForScope(scopeFromRequest(r), lab.SampleIntakeTemplateInput{
+		Name:                r.FormValue("name"),
+		ClientID:            r.FormValue("client_id"),
+		ProjectID:           r.FormValue("project_id"),
+		Project:             r.FormValue("project"),
+		Matrix:              r.FormValue("matrix"),
+		MatrixReferenceID:   r.FormValue("matrix_reference_id"),
+		ContainerID:         r.FormValue("container_id"),
+		PreservativeID:      r.FormValue("preservative_id"),
+		StorageLocationID:   r.FormValue("storage_location_id"),
+		ReceivedConditionID: r.FormValue("received_condition_id"),
+		Priority:            lab.SamplePriority(r.FormValue("priority")),
+		AnalysisProfileIDs:  splitIDs(r.Form["analysis_profile_ids"]),
+		AnalysisServiceIDs:  splitIDs(r.Form["analysis_service_ids"]),
+		Tests:               splitTests(r.FormValue("tests")),
+	}, actor(r))
+	writeMutationResponse(w, r, tmpl, err)
+}
+
+func (a *app) createSamplesFromTemplate(w http.ResponseWriter, r *http.Request) {
+	templateID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/sample-intake-templates/"), "/samples")
+	if templateID == "" || strings.Contains(templateID, "/") || !strings.HasSuffix(r.URL.Path, "/samples") {
+		http.NotFound(w, r)
+		return
+	}
+	var rows []lab.SampleTemplateRowInput
+	if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		if err := json.NewDecoder(r.Body).Decode(&rows); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	} else {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		clientIDs := splitTests(r.FormValue("client_sample_ids"))
+		labIDs := splitTests(r.FormValue("lab_sample_ids"))
+		for i, clientID := range clientIDs {
+			row := lab.SampleTemplateRowInput{ClientSampleID: clientID}
+			if i < len(labIDs) {
+				row.LabSampleID = labIDs[i]
+			}
+			rows = append(rows, row)
+		}
+	}
+	samples, err := a.store.CreateSamplesFromTemplateForScope(scopeFromRequest(r), templateID, rows, actor(r))
+	writeMutationResponse(w, r, samples, err)
 }
 
 func writeMutationResponse(w http.ResponseWriter, r *http.Request, value any, err error) {
