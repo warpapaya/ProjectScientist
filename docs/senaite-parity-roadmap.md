@@ -123,8 +123,8 @@ Needed:
 
 Needed:
 - Docker dev/prod profile separation.
-- Backup/restore test harness.
-- Audit verification on startup and as an operator command.
+- Backup/restore test harness (`./scripts/backup-restore-proof.sh`; details in `docs/backup-restore-proof.md`).
+- Audit verification on startup and as an operator command/proof step.
 - Seed/demo data and smoke suite.
 - CI: tests, lint, build, container health.
 - Deployment runbook, rollback plan, observability/logging.
