@@ -75,4 +75,7 @@ func TestOpenSQLiteStoreMigratesLegacyStoreBeforeCreatingScopedIndexes(t *testin
 			t.Fatalf("%s missing scoped columns after migration: %#v", table, columns)
 		}
 	}
+	if _, err := store.CreateClient("Migrated Legacy Lab", "legacy@example.test", demoSeedActorForTest()); err != nil {
+		t.Fatalf("expected migrated legacy audit schema to accept new audit writes: %v", err)
+	}
 }

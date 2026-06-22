@@ -843,7 +843,15 @@ func appendAuditTx(tx *sql.Tx, write auditWrite) error {
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`INSERT INTO audit_events(event_id, tenant_id, lab_id, timestamp, actor, actor_json, resource_json, action, outcome, reason, correlation_id, sequence, details_json, previous_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.EventID, event.TenantID, event.LabID, formatTime(event.Timestamp), event.Actor, string(actorJSON), string(resourceJSON), event.Action, string(event.Outcome), event.Reason, event.CorrelationID, event.Sequence, string(detailsJSON), event.PreviousHash, event.Hash); err != nil {
+	auditColumns, err := tableColumnsTx(tx, "audit_events")
+	if err != nil {
+		return err
+	}
+	if auditColumns["entity_type"] && auditColumns["entity_id"] {
+		if _, err := tx.Exec(`INSERT INTO audit_events(event_id, tenant_id, lab_id, timestamp, actor, actor_json, resource_json, action, outcome, reason, correlation_id, sequence, details_json, previous_hash, hash, entity_type, entity_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.EventID, event.TenantID, event.LabID, formatTime(event.Timestamp), event.Actor, string(actorJSON), string(resourceJSON), event.Action, string(event.Outcome), event.Reason, event.CorrelationID, event.Sequence, string(detailsJSON), event.PreviousHash, event.Hash, event.Resource.Type, event.Resource.ID); err != nil {
+			return err
+		}
+	} else if _, err := tx.Exec(`INSERT INTO audit_events(event_id, tenant_id, lab_id, timestamp, actor, actor_json, resource_json, action, outcome, reason, correlation_id, sequence, details_json, previous_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.EventID, event.TenantID, event.LabID, formatTime(event.Timestamp), event.Actor, string(actorJSON), string(resourceJSON), event.Action, string(event.Outcome), event.Reason, event.CorrelationID, event.Sequence, string(detailsJSON), event.PreviousHash, event.Hash); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`UPDATE store_meta SET value = ? WHERE key = 'last_hash'`, event.Hash); err != nil {
@@ -851,6 +859,27 @@ func appendAuditTx(tx *sql.Tx, write auditWrite) error {
 	}
 	_, err = tx.Exec(`INSERT INTO audit_checkpoints(name, sequence, hash, created_at) VALUES ('latest', ?, ?, ?) ON CONFLICT(name) DO UPDATE SET sequence = excluded.sequence, hash = excluded.hash, created_at = excluded.created_at`, event.Sequence, event.Hash, formatTime(time.Now().UTC()))
 	return err
+}
+
+func tableColumnsTx(tx *sql.Tx, table string) (map[string]bool, error) {
+	rows, err := tx.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	columns := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return nil, err
+		}
+		columns[name] = true
+	}
+	return columns, rows.Err()
 }
 
 func normalizeActorContext(actor ActorContext, fallbackRequestID string) ActorContext {
