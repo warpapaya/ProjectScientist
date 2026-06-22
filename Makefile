@@ -1,16 +1,19 @@
 .PHONY: test vet fmt-check ci docker-test docker-build docker-smoke backup-restore-proof image-review dev-up dev-down dev-reset dev-seed demo-reset
 
-WORKTREE_SLUG ?= $(shell basename "$$(pwd)" | tr -cs '[:alnum:]_.-' '-' | sed 's/^-//;s/-$$//')
+WORKTREE_SLUG ?= $(shell basename "$$(pwd)" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]_.-' '-' | sed 's/^-//;s/-$$//')
 COMPOSE_PROJECT_NAME ?= project-scientist-$(WORKTREE_SLUG)
 DEV_PORT ?= 8097
+SMOKE_PORT ?= 18097
 DEV_HEALTH_URL ?= http://127.0.0.1:$(DEV_PORT)/healthz
 DEV_BASE_URL ?= http://127.0.0.1:$(DEV_PORT)
+SMOKE_BASE_URL ?= http://127.0.0.1:$(SMOKE_PORT)
 PSC_IMAGE_TAG ?= project-scientist:dev-local
 PSC_TEST_IMAGE_TAG ?= project-scientist:test-local
 DOCKER_GO_PARALLEL ?= 2
 COMPOSE ?= docker compose
-COMPOSE_RUN = env COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)" PSC_DEV_PORT="$(DEV_PORT)" PSC_IMAGE_TAG="$(PSC_IMAGE_TAG)" PSC_TEST_IMAGE_TAG="$(PSC_TEST_IMAGE_TAG)" PSC_DOCKER_GO_PARALLEL="$(DOCKER_GO_PARALLEL)" $(COMPOSE)
-COMPOSE_TEST_RUN = env COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)-test" PSC_DEV_PORT="$(DEV_PORT)" PSC_IMAGE_TAG="$(PSC_IMAGE_TAG)" PSC_TEST_IMAGE_TAG="$(PSC_TEST_IMAGE_TAG)" PSC_DOCKER_GO_PARALLEL="$(DOCKER_GO_PARALLEL)" $(COMPOSE)
+COMPOSE_RUN = env COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)" PSC_DEV_PORT="$(DEV_PORT)" PSC_DATA_DIR="$(PSC_DATA_DIR)" PSC_IMAGE_TAG="$(PSC_IMAGE_TAG)" PSC_TEST_IMAGE_TAG="$(PSC_TEST_IMAGE_TAG)" PSC_DOCKER_GO_PARALLEL="$(DOCKER_GO_PARALLEL)" $(COMPOSE)
+COMPOSE_TEST_RUN = env COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)-test" PSC_DEV_PORT="$(DEV_PORT)" PSC_DATA_DIR="$(PSC_DATA_DIR)" PSC_IMAGE_TAG="$(PSC_IMAGE_TAG)" PSC_TEST_IMAGE_TAG="$(PSC_TEST_IMAGE_TAG)" PSC_DOCKER_GO_PARALLEL="$(DOCKER_GO_PARALLEL)" $(COMPOSE)
+COMPOSE_SMOKE_RUN = env COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)-smoke" PSC_DEV_PORT="$(SMOKE_PORT)" PSC_DATA_DIR="/tmp/project-scientist-smoke-data" PSC_IMAGE_TAG="$(PSC_IMAGE_TAG)" PSC_TEST_IMAGE_TAG="$(PSC_TEST_IMAGE_TAG)" PSC_DOCKER_GO_PARALLEL="$(DOCKER_GO_PARALLEL)" $(COMPOSE)
 
 # Host gates.
 test:
@@ -29,6 +32,7 @@ ci: fmt-check test vet docker-test docker-build
 docker-test:
 	@set -e; \
 		trap '$(COMPOSE_TEST_RUN) down --remove-orphans >/dev/null 2>&1 || true' EXIT; \
+		$(COMPOSE_TEST_RUN) down --remove-orphans >/dev/null 2>&1 || true; \
 		$(COMPOSE_TEST_RUN) run --build --rm project-scientist-test
 
 docker-build:
@@ -36,11 +40,13 @@ docker-build:
 
 docker-smoke:
 	@set -e; \
-		trap '$(COMPOSE_RUN) down --remove-orphans >/dev/null 2>&1 || true' EXIT; \
-		$(MAKE) --no-print-directory dev-up; \
-		$(MAKE) --no-print-directory dev-seed; \
-		curl -fsS $(DEV_BASE_URL)/api/state | grep -q 'Okefenokee Synthetic Water Authority'; \
-		curl -fsS $(DEV_BASE_URL)/api/state | grep -q 'S-000001'; \
+		trap '$(COMPOSE_SMOKE_RUN) down --remove-orphans >/dev/null 2>&1 || true' EXIT; \
+		$(COMPOSE_SMOKE_RUN) down --remove-orphans >/dev/null 2>&1 || true; \
+		$(COMPOSE_SMOKE_RUN) up --build -d project-scientist; \
+		./scripts/wait-health.sh $(SMOKE_BASE_URL)/healthz; \
+		./scripts/dev-seed.sh $(SMOKE_BASE_URL); \
+		curl -fsS $(SMOKE_BASE_URL)/api/state | grep -q 'Okefenokee Synthetic Water Authority'; \
+		curl -fsS $(SMOKE_BASE_URL)/api/state | grep -q 'S-000001'; \
 		printf 'docker smoke ok\n'
 
 backup-restore-proof:
@@ -57,6 +63,9 @@ dev-up:
 
 dev-down:
 	$(COMPOSE_RUN) down --remove-orphans
+	@$(COMPOSE_TEST_RUN) down --remove-orphans >/dev/null 2>&1 || true
+	@$(COMPOSE_SMOKE_RUN) down --remove-orphans >/dev/null 2>&1 || true
+	@./scripts/dev-clean-containers.sh
 
 dev-reset:
 	$(COMPOSE_RUN) down --volumes --remove-orphans

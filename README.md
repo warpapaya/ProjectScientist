@@ -24,7 +24,7 @@ make dev-up
 open http://127.0.0.1:8097
 ```
 
-The Docker workflow derives a clone/worktree-specific Compose project name by default (`project-scientist-<repo-dir>`). For concurrent local clones or Kanban workers, override the project and loopback port explicitly:
+The Docker workflow derives a clone/worktree-specific Compose project name by default (`project-scientist-<repo-dir>`). `make docker-smoke` uses a separate `<COMPOSE_PROJECT_NAME>-smoke` Compose project, loopback port `18097`, and an in-container temp data directory so the smoke gate does not mutate or delete preserved local development volumes. For concurrent local clones or Kanban workers, override the project and loopback port explicitly:
 
 ```bash
 make dev-up COMPOSE_PROJECT_NAME=project-scientist-$USER-1 DEV_PORT=18097
@@ -47,7 +47,7 @@ make docker-test
 make docker-smoke
 ```
 
-`make docker-test` uses an isolated `<COMPOSE_PROJECT_NAME>-test` Compose project and cleans it up on exit. `make docker-smoke` starts the dev container, verifies the seeded API state, then stops the container so normal pass/fail runs do not leave a running smoke container behind.
+`make docker-test` uses an isolated `<COMPOSE_PROJECT_NAME>-test` Compose project and cleans it up on exit. `make docker-smoke` uses an isolated `<COMPOSE_PROJECT_NAME>-smoke` Compose project on loopback port `18097`, verifies the seeded API state against an in-container temp data directory, then stops the smoke container/network. Preserved development volumes are left in place and are not silently deleted.
 
 Seed/reset deterministic synthetic local-only data through the running dev API:
 

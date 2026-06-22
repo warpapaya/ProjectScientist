@@ -48,11 +48,12 @@ http://127.0.0.1:8097
 
 ## Concurrent clones / Kanban workers
 
-The default Make workflow derives a Compose project name from the repo directory:
+The default Make workflow derives a lowercase Compose project name from the repo directory:
 
 ```text
 COMPOSE_PROJECT_NAME ?= project-scientist-<repo-dir>
 DEV_PORT ?= 8097
+SMOKE_PORT ?= 18097
 PSC_IMAGE_TAG ?= project-scientist:dev-local
 PSC_TEST_IMAGE_TAG ?= project-scientist:test-local
 DOCKER_GO_PARALLEL ?= 2
@@ -66,7 +67,7 @@ make docker-smoke COMPOSE_PROJECT_NAME=project-scientist-$USER-a DEV_PORT=18097
 make dev-down COMPOSE_PROJECT_NAME=project-scientist-$USER-a DEV_PORT=18097
 ```
 
-`make docker-test` automatically runs under `<COMPOSE_PROJECT_NAME>-test`, so one-off test containers/networks do not share the long-running dev project.
+`make docker-test` automatically runs under `<COMPOSE_PROJECT_NAME>-test`, so one-off test containers/networks do not share the long-running dev project. `make docker-smoke` runs under `<COMPOSE_PROJECT_NAME>-smoke`, defaults to loopback port `18097`, and sets `PSC_DATA_DIR=/tmp/project-scientist-smoke-data` inside the container. That makes repeat smoke runs independent from any preserved local named development volume, including a volume intentionally kept for forensic review after a failed audit-verification experiment.
 
 Stop the local container without deleting the named data volume:
 
@@ -116,7 +117,7 @@ make docker-smoke
 make dev-down
 ```
 
-`make docker-smoke` starts the local container, waits for `/healthz`, seeds synthetic demo data through the public local API, verifies `/api/state` contains the synthetic lab, and then stops the Compose project through an exit trap. The seed path is intentionally API-level so it exercises the running container instead of mutating files directly.
+`make docker-smoke` starts an isolated smoke Compose project, waits for `/healthz`, seeds synthetic demo data through the public local API, verifies `/api/state` contains the synthetic lab, and then stops the smoke container/network through an exit trap. It intentionally uses container-local temp storage instead of the named development data volume so a preserved lab volume is never deleted or rewritten just to make smoke pass. The seed path is API-level so it exercises the running container instead of mutating files directly.
 
 ## Deterministic local demo seed/reset
 
@@ -148,7 +149,7 @@ Normal stop:
 make dev-down
 ```
 
-This removes the project container/network and preserves the project-scoped `project-scientist-data` volume.
+This removes the project container/network and preserves the project-scoped `project-scientist-data` volume. It also runs `scripts/dev-clean-containers.sh`, which removes stale Project Scientist containers/networks from prior interrupted local lab runs while still preserving all named volumes for inspection.
 
 Local-only reset, destructive to this dev volume:
 
@@ -162,7 +163,7 @@ Repo-local runtime directories are ignored and excluded from Docker context: `da
 
 ## Determinism and image review
 
-- Compose uses a directory-derived project name by default, supports explicit `COMPOSE_PROJECT_NAME`/`DEV_PORT` overrides for concurrent workers, uses deterministic local image tags (`project-scientist:dev-local`, `project-scientist:test-local`), loopback-only port binding, and a named dev data volume scoped by Compose project.
+- Compose uses a directory-derived project name by default, supports explicit `COMPOSE_PROJECT_NAME`/`DEV_PORT`/`SMOKE_PORT` overrides for concurrent workers, uses deterministic local image tags (`project-scientist:dev-local`, `project-scientist:test-local`), loopback-only port binding, a named dev data volume scoped by Compose project, and an isolated smoke project that does not mutate preserved dev volumes.
 - Dockerfile build/runtime bases are pinned by digest and should only be updated deliberately.
 - Runtime stays dependency-light: static Go binary on Alpine, non-root `scientist` user, SQLite file persistence only, no Redis/auth/proxy services added in this lane.
 - SQLite uses `github.com/mattn/go-sqlite3`, so Docker build/test stages install Alpine `gcc`/`musl-dev` and compile with CGO enabled; build tooling is not copied into the runtime stage.
