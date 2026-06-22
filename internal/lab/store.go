@@ -86,49 +86,91 @@ const (
 )
 
 type Sample struct {
-	ID                  string         `json:"id"`
-	TenantID            string         `json:"tenant_id"`
-	LabID               string         `json:"lab_id"`
-	ClientID            string         `json:"client_id"`
-	ProjectID           string         `json:"project_id,omitempty"`
-	Project             string         `json:"project"`
-	ClientSampleID      string         `json:"client_sample_id,omitempty"`
-	LabSampleID         string         `json:"lab_sample_id,omitempty"`
-	Matrix              string         `json:"matrix"`
-	MatrixReferenceID   string         `json:"matrix_reference_id,omitempty"`
-	ContainerID         string         `json:"container_id,omitempty"`
-	PreservativeID      string         `json:"preservative_id,omitempty"`
-	StorageLocationID   string         `json:"storage_location_id,omitempty"`
-	ReceivedConditionID string         `json:"received_condition_id,omitempty"`
-	SampledAt           time.Time      `json:"sampled_at,omitempty"`
-	ReceivedAt          time.Time      `json:"received_at,omitempty"`
-	Priority            SamplePriority `json:"priority"`
-	Comments            string         `json:"comments,omitempty"`
-	Status              SampleStatus   `json:"status"`
-	Analyses            []Analysis     `json:"analyses"`
-	CreatedAt           time.Time      `json:"created_at"`
-	UpdatedAt           time.Time      `json:"updated_at"`
+	ID                  string            `json:"id"`
+	TenantID            string            `json:"tenant_id"`
+	LabID               string            `json:"lab_id"`
+	ClientID            string            `json:"client_id"`
+	ProjectID           string            `json:"project_id,omitempty"`
+	Project             string            `json:"project"`
+	ClientSampleID      string            `json:"client_sample_id,omitempty"`
+	LabSampleID         string            `json:"lab_sample_id,omitempty"`
+	Matrix              string            `json:"matrix"`
+	MatrixReferenceID   string            `json:"matrix_reference_id,omitempty"`
+	ContainerID         string            `json:"container_id,omitempty"`
+	PreservativeID      string            `json:"preservative_id,omitempty"`
+	StorageLocationID   string            `json:"storage_location_id,omitempty"`
+	ReceivedConditionID string            `json:"received_condition_id,omitempty"`
+	SampledAt           time.Time         `json:"sampled_at,omitempty"`
+	ReceivedAt          time.Time         `json:"received_at,omitempty"`
+	Priority            SamplePriority    `json:"priority"`
+	Comments            string            `json:"comments,omitempty"`
+	Status              SampleStatus      `json:"status"`
+	Analyses            []Analysis        `json:"analyses"`
+	Containers          []SampleContainer `json:"containers,omitempty"`
+	CreatedAt           time.Time         `json:"created_at"`
+	UpdatedAt           time.Time         `json:"updated_at"`
+}
+
+type SampleContainer struct {
+	ID                   string          `json:"id"`
+	SampleID             string          `json:"sample_id"`
+	ContainerReferenceID string          `json:"container_reference_id"`
+	PreservativeID       string          `json:"preservative_id,omitempty"`
+	ReceivedConditionID  string          `json:"received_condition_id,omitempty"`
+	Volume               string          `json:"volume,omitempty"`
+	Condition            string          `json:"condition,omitempty"`
+	AliquotInstructions  string          `json:"aliquot_instructions,omitempty"`
+	Aliquots             []SampleAliquot `json:"aliquots,omitempty"`
+}
+
+type SampleAliquot struct {
+	ID             string `json:"id"`
+	ContainerID    string `json:"container_id"`
+	DepartmentID   string `json:"department_id,omitempty"`
+	DepartmentName string `json:"department_name,omitempty"`
+	MethodID       string `json:"method_id,omitempty"`
+	MethodName     string `json:"method_name,omitempty"`
+	Volume         string `json:"volume,omitempty"`
+	Purpose        string `json:"purpose,omitempty"`
 }
 
 type CreateSampleInput struct {
-	ClientID            string         `json:"client_id"`
-	ProjectID           string         `json:"project_id"`
-	Project             string         `json:"project"`
-	ClientSampleID      string         `json:"client_sample_id"`
-	LabSampleID         string         `json:"lab_sample_id"`
-	Matrix              string         `json:"matrix"`
-	MatrixReferenceID   string         `json:"matrix_reference_id"`
-	ContainerID         string         `json:"container_id"`
-	PreservativeID      string         `json:"preservative_id"`
-	StorageLocationID   string         `json:"storage_location_id"`
-	ReceivedConditionID string         `json:"received_condition_id"`
-	SampledAt           time.Time      `json:"sampled_at"`
-	ReceivedAt          time.Time      `json:"received_at"`
-	Priority            SamplePriority `json:"priority"`
-	Comments            string         `json:"comments"`
-	AnalysisProfileIDs  []string       `json:"analysis_profile_ids"`
-	AnalysisServiceIDs  []string       `json:"analysis_service_ids"`
-	Tests               []string       `json:"tests"`
+	ClientID            string                 `json:"client_id"`
+	ProjectID           string                 `json:"project_id"`
+	Project             string                 `json:"project"`
+	ClientSampleID      string                 `json:"client_sample_id"`
+	LabSampleID         string                 `json:"lab_sample_id"`
+	Matrix              string                 `json:"matrix"`
+	MatrixReferenceID   string                 `json:"matrix_reference_id"`
+	ContainerID         string                 `json:"container_id"`
+	PreservativeID      string                 `json:"preservative_id"`
+	StorageLocationID   string                 `json:"storage_location_id"`
+	ReceivedConditionID string                 `json:"received_condition_id"`
+	SampledAt           time.Time              `json:"sampled_at"`
+	ReceivedAt          time.Time              `json:"received_at"`
+	Priority            SamplePriority         `json:"priority"`
+	Comments            string                 `json:"comments"`
+	AnalysisProfileIDs  []string               `json:"analysis_profile_ids"`
+	AnalysisServiceIDs  []string               `json:"analysis_service_ids"`
+	Tests               []string               `json:"tests"`
+	Containers          []SampleContainerInput `json:"containers"`
+}
+
+type SampleContainerInput struct {
+	ContainerReferenceID string               `json:"container_reference_id"`
+	PreservativeID       string               `json:"preservative_id"`
+	ReceivedConditionID  string               `json:"received_condition_id"`
+	Volume               string               `json:"volume"`
+	Condition            string               `json:"condition"`
+	AliquotInstructions  string               `json:"aliquot_instructions"`
+	Aliquots             []SampleAliquotInput `json:"aliquots"`
+}
+
+type SampleAliquotInput struct {
+	DepartmentID string `json:"department_id"`
+	MethodID     string `json:"method_id"`
+	Volume       string `json:"volume"`
+	Purpose      string `json:"purpose"`
 }
 
 type AuditOutcome string
@@ -217,6 +259,7 @@ var sqliteMigrations = []string{
 		preservative_id TEXT NOT NULL DEFAULT '',
 		storage_location_id TEXT NOT NULL DEFAULT '',
 		received_condition_id TEXT NOT NULL DEFAULT '',
+		containers_json TEXT NOT NULL DEFAULT '[]',
 		sampled_at TEXT NOT NULL DEFAULT '',
 		received_at TEXT NOT NULL DEFAULT '',
 		priority TEXT NOT NULL DEFAULT 'routine',
@@ -498,6 +541,7 @@ func (s *Store) migrateV1AuditSchema(ctx context.Context) error {
 		{"preservative_id", `preservative_id TEXT NOT NULL DEFAULT ''`},
 		{"storage_location_id", `storage_location_id TEXT NOT NULL DEFAULT ''`},
 		{"received_condition_id", `received_condition_id TEXT NOT NULL DEFAULT ''`},
+		{"containers_json", `containers_json TEXT NOT NULL DEFAULT '[]'`},
 		{"sampled_at", `sampled_at TEXT NOT NULL DEFAULT ''`},
 		{"received_at", `received_at TEXT NOT NULL DEFAULT ''`},
 		{"priority", `priority TEXT NOT NULL DEFAULT 'routine'`},
@@ -773,15 +817,23 @@ func (s *Store) CreateSampleForScope(scope Scope, input CreateSampleInput, actor
 		if err != nil {
 			return err
 		}
-		sample = Sample{ID: sampleID, TenantID: scope.TenantID, LabID: scope.LabID, ClientID: input.ClientID, ProjectID: resolved.ProjectID, Project: resolved.Project, ClientSampleID: strings.TrimSpace(input.ClientSampleID), LabSampleID: strings.TrimSpace(input.LabSampleID), Matrix: resolved.Matrix, MatrixReferenceID: resolved.MatrixReferenceID, ContainerID: resolved.ContainerID, PreservativeID: resolved.PreservativeID, StorageLocationID: resolved.StorageLocationID, ReceivedConditionID: resolved.ReceivedConditionID, SampledAt: input.SampledAt.UTC(), ReceivedAt: input.ReceivedAt.UTC(), Priority: normalizePriority(input.Priority), Comments: strings.TrimSpace(input.Comments), Status: StatusReceived, Analyses: analyses, CreatedAt: now, UpdatedAt: now}
+		containers, err := buildSampleContainersTx(tx, scope, sampleID, input.Containers)
+		if err != nil {
+			return err
+		}
+		sample = Sample{ID: sampleID, TenantID: scope.TenantID, LabID: scope.LabID, ClientID: input.ClientID, ProjectID: resolved.ProjectID, Project: resolved.Project, ClientSampleID: strings.TrimSpace(input.ClientSampleID), LabSampleID: strings.TrimSpace(input.LabSampleID), Matrix: resolved.Matrix, MatrixReferenceID: resolved.MatrixReferenceID, ContainerID: resolved.ContainerID, PreservativeID: resolved.PreservativeID, StorageLocationID: resolved.StorageLocationID, ReceivedConditionID: resolved.ReceivedConditionID, SampledAt: input.SampledAt.UTC(), ReceivedAt: input.ReceivedAt.UTC(), Priority: normalizePriority(input.Priority), Comments: strings.TrimSpace(input.Comments), Status: StatusReceived, Analyses: analyses, Containers: containers, CreatedAt: now, UpdatedAt: now}
 		encodedAnalyses, err := json.Marshal(sample.Analyses)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO samples(id, tenant_id, lab_id, client_id, project_id, project, client_sample_id, lab_sample_id, matrix, matrix_reference_id, container_id, preservative_id, storage_location_id, received_condition_id, sampled_at, received_at, priority, comments, status, analyses_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sample.ID, sample.TenantID, sample.LabID, sample.ClientID, sample.ProjectID, sample.Project, sample.ClientSampleID, sample.LabSampleID, sample.Matrix, sample.MatrixReferenceID, sample.ContainerID, sample.PreservativeID, sample.StorageLocationID, sample.ReceivedConditionID, formatOptionalTime(sample.SampledAt), formatOptionalTime(sample.ReceivedAt), string(sample.Priority), sample.Comments, string(sample.Status), string(encodedAnalyses), formatTime(sample.CreatedAt), formatTime(sample.UpdatedAt)); err != nil {
+		encodedContainers, err := json.Marshal(sample.Containers)
+		if err != nil {
 			return err
 		}
-		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "sample.created", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "sample", ID: sample.ID}, Details: map[string]any{"client_id": sample.ClientID, "project_id": sample.ProjectID, "client_sample_id": sample.ClientSampleID, "lab_sample_id": sample.LabSampleID, "analysis_count": len(sample.Analyses)}})
+		if _, err := tx.Exec(`INSERT INTO samples(id, tenant_id, lab_id, client_id, project_id, project, client_sample_id, lab_sample_id, matrix, matrix_reference_id, container_id, preservative_id, storage_location_id, received_condition_id, containers_json, sampled_at, received_at, priority, comments, status, analyses_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sample.ID, sample.TenantID, sample.LabID, sample.ClientID, sample.ProjectID, sample.Project, sample.ClientSampleID, sample.LabSampleID, sample.Matrix, sample.MatrixReferenceID, sample.ContainerID, sample.PreservativeID, sample.StorageLocationID, sample.ReceivedConditionID, string(encodedContainers), formatOptionalTime(sample.SampledAt), formatOptionalTime(sample.ReceivedAt), string(sample.Priority), sample.Comments, string(sample.Status), string(encodedAnalyses), formatTime(sample.CreatedAt), formatTime(sample.UpdatedAt)); err != nil {
+			return err
+		}
+		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "sample.created", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "sample", ID: sample.ID}, Details: map[string]any{"client_id": sample.ClientID, "project_id": sample.ProjectID, "client_sample_id": sample.ClientSampleID, "lab_sample_id": sample.LabSampleID, "analysis_count": len(sample.Analyses), "container_count": len(sample.Containers)}})
 	})
 	if err != nil {
 		return Sample{}, err
@@ -1193,7 +1245,7 @@ func (s *Store) latestCheckpoint() (AuditCheckpoint, bool, error) {
 
 type sampleScanner interface{ Scan(dest ...any) error }
 
-const sampleSelectSQL = `SELECT id, tenant_id, lab_id, client_id, project_id, project, client_sample_id, lab_sample_id, matrix, matrix_reference_id, container_id, preservative_id, storage_location_id, received_condition_id, sampled_at, received_at, priority, comments, status, analyses_json, created_at, updated_at`
+const sampleSelectSQL = `SELECT id, tenant_id, lab_id, client_id, project_id, project, client_sample_id, lab_sample_id, matrix, matrix_reference_id, container_id, preservative_id, storage_location_id, received_condition_id, containers_json, sampled_at, received_at, priority, comments, status, analyses_json, created_at, updated_at`
 
 func sampleByID(db *sql.DB, id string) (Sample, error) {
 	return sampleByIDScanner(db.QueryRow(sampleSelectSQL+` FROM samples WHERE id = ?`, id))
@@ -1204,8 +1256,8 @@ func sampleByIDTx(tx *sql.Tx, id string) (Sample, error) {
 
 func sampleByIDScanner(row sampleScanner) (Sample, error) {
 	var sample Sample
-	var status, analysesJSON, priority, sampledAt, receivedAt, created, updated string
-	if err := row.Scan(&sample.ID, &sample.TenantID, &sample.LabID, &sample.ClientID, &sample.ProjectID, &sample.Project, &sample.ClientSampleID, &sample.LabSampleID, &sample.Matrix, &sample.MatrixReferenceID, &sample.ContainerID, &sample.PreservativeID, &sample.StorageLocationID, &sample.ReceivedConditionID, &sampledAt, &receivedAt, &priority, &sample.Comments, &status, &analysesJSON, &created, &updated); err != nil {
+	var status, analysesJSON, containersJSON, priority, sampledAt, receivedAt, created, updated string
+	if err := row.Scan(&sample.ID, &sample.TenantID, &sample.LabID, &sample.ClientID, &sample.ProjectID, &sample.Project, &sample.ClientSampleID, &sample.LabSampleID, &sample.Matrix, &sample.MatrixReferenceID, &sample.ContainerID, &sample.PreservativeID, &sample.StorageLocationID, &sample.ReceivedConditionID, &containersJSON, &sampledAt, &receivedAt, &priority, &sample.Comments, &status, &analysesJSON, &created, &updated); err != nil {
 		return Sample{}, err
 	}
 	sample.Status = SampleStatus(status)
@@ -1214,6 +1266,11 @@ func sampleByIDScanner(row sampleScanner) (Sample, error) {
 	sample.ReceivedAt = parseOptionalTime(receivedAt)
 	if err := json.Unmarshal([]byte(analysesJSON), &sample.Analyses); err != nil {
 		return Sample{}, err
+	}
+	if strings.TrimSpace(containersJSON) != "" {
+		if err := json.Unmarshal([]byte(containersJSON), &sample.Containers); err != nil {
+			return Sample{}, err
+		}
 	}
 	sample.CreatedAt, _ = parseTime(created)
 	sample.UpdatedAt, _ = parseTime(updated)
