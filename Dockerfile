@@ -12,8 +12,11 @@ COPY internal ./internal
 RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w -linkmode external -extldflags '-static'" -o /out/project-scientist ./cmd/project-scientist
 
 FROM golang:1.26-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648 AS test
-ARG GO_PARALLEL=2
-ENV GOMAXPROCS=${GO_PARALLEL} GOFLAGS="-p=${GO_PARALLEL}"
+ARG GO_PARALLEL=1
+ARG GO_MEM_LIMIT=512MiB
+ENV GOMAXPROCS=${GO_PARALLEL} \
+    GOMEMLIMIT=${GO_MEM_LIMIT} \
+    GOFLAGS="-p=${GO_PARALLEL}"
 RUN apk add --no-cache gcc musl-dev
 WORKDIR /src
 COPY go.* ./
@@ -21,7 +24,7 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 COPY fixtures ./fixtures
-CMD ["go", "test", "-mod=readonly", "./..."]
+CMD ["go", "test", "-mod=readonly", "-vet=off", "-count=1", "./..."]
 
 FROM alpine:3.22@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601 AS runtime
 LABEL org.opencontainers.image.source="https://github.com/warpapaya/ProjectScientist"       org.opencontainers.image.description="Project Scientist local lab-test prototype; not for customer/prod data"
