@@ -60,7 +60,7 @@ Reset the local dev container and named volume when you intentionally want a cle
 make dev-reset
 ```
 
-Full workflow, persistence/reset caveats, CI candidate notes, image review, and stop-lines are documented in [docs/dev.md](docs/dev.md). Local operator commands for audit verification, DB migrate/status, seed/reset, backup/restore, HTTP smoke, and the logs/metrics plan are documented in [docs/operations.md](docs/operations.md). The lab-test MVP acceptance contract and operator demo script live in [docs/mvp-acceptance-contract-demo-script.md](docs/mvp-acceptance-contract-demo-script.md). The MVP critical-path click budget lives in [docs/mvp-critical-path-ux-click-budget.md](docs/mvp-critical-path-ux-click-budget.md).
+Full workflow, persistence/reset caveats, CI candidate notes, image review, and stop-lines are documented in [docs/dev.md](docs/dev.md). Local operator commands for audit verification, DB migrate/status, seed/reset, backup/restore, HTTP smoke, and the logs/metrics plan are documented in [docs/operations.md](docs/operations.md). The lab-test MVP acceptance contract and operator demo script live in [docs/mvp-acceptance-contract-demo-script.md](docs/mvp-acceptance-contract-demo-script.md). The MVP synthetic lab fixture/scenario pack lives in [docs/mvp-synthetic-lab-fixture-pack.md](docs/mvp-synthetic-lab-fixture-pack.md) with machine-readable definitions in [fixtures/mvp_synthetic_lab.json](fixtures/mvp_synthetic_lab.json). The MVP critical-path click budget lives in [docs/mvp-critical-path-ux-click-budget.md](docs/mvp-critical-path-ux-click-budget.md).
 
 ## Implemented in bootstrap
 
