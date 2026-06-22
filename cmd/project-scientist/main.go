@@ -28,22 +28,27 @@ type app struct {
 }
 
 type pageData struct {
-	Scope           lab.Scope
-	Clients         []lab.Client
-	Sites           []lab.Site
-	Contacts        []lab.Contact
-	ContactRoles    []lab.ContactRole
-	Projects        []lab.Project
-	ClientDefaults  []lab.ClientDefaults
-	Samples         []lab.Sample
-	Audit           []lab.AuditEvent
-	Departments     []lab.CatalogDepartment
-	Units           []lab.CatalogUnit
-	Methods         []lab.CatalogMethod
-	Analytes        []lab.CatalogAnalyte
-	Services        []lab.AnalysisService
-	Profiles        []lab.AnalysisProfile
-	SampleReference []lab.SampleReferenceItem
+	Scope                       lab.Scope
+	Clients                     []lab.Client
+	Sites                       []lab.Site
+	Contacts                    []lab.Contact
+	ContactRoles                []lab.ContactRole
+	Projects                    []lab.Project
+	ClientDefaults              []lab.ClientDefaults
+	Samples                     []lab.Sample
+	Audit                       []lab.AuditEvent
+	Departments                 []lab.CatalogDepartment
+	Units                       []lab.CatalogUnit
+	Methods                     []lab.CatalogMethod
+	Analytes                    []lab.CatalogAnalyte
+	Services                    []lab.AnalysisService
+	Profiles                    []lab.AnalysisProfile
+	SampleReference             []lab.SampleReferenceItem
+	MatrixReferences            []lab.SampleReferenceItem
+	ContainerReferences         []lab.SampleReferenceItem
+	PreservativeReferences      []lab.SampleReferenceItem
+	StorageLocationReferences   []lab.SampleReferenceItem
+	ReceivedConditionReferences []lab.SampleReferenceItem
 }
 
 func main() {
@@ -411,24 +416,40 @@ func (a *app) apiState(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) pageData(scope lab.Scope, auditLimit int) pageData {
 	audit, _ := a.store.AuditEventsForScope(scope, auditLimit)
+	references := a.store.AllSampleReferenceItemsForScope(scope)
 	return pageData{
-		Scope:           scope,
-		Clients:         a.store.ClientsForScope(scope),
-		Sites:           a.store.SitesForScope(scope),
-		Contacts:        a.store.ContactsForScope(scope),
-		ContactRoles:    a.store.ContactRolesForScope(scope),
-		Projects:        a.store.ProjectsForScope(scope),
-		ClientDefaults:  a.store.AllClientDefaultsForScope(scope),
-		Samples:         a.store.SamplesForScope(scope),
-		Audit:           audit,
-		Departments:     a.store.CatalogDepartmentsForScope(scope),
-		Units:           a.store.CatalogUnitsForScope(scope),
-		Methods:         a.store.CatalogMethodsForScope(scope),
-		Analytes:        a.store.CatalogAnalytesForScope(scope),
-		Services:        a.store.AnalysisServicesForScope(scope),
-		Profiles:        a.store.AnalysisProfilesForScope(scope),
-		SampleReference: a.store.AllSampleReferenceItemsForScope(scope),
+		Scope:                       scope,
+		Clients:                     a.store.ClientsForScope(scope),
+		Sites:                       a.store.SitesForScope(scope),
+		Contacts:                    a.store.ContactsForScope(scope),
+		ContactRoles:                a.store.ContactRolesForScope(scope),
+		Projects:                    a.store.ProjectsForScope(scope),
+		ClientDefaults:              a.store.AllClientDefaultsForScope(scope),
+		Samples:                     a.store.SamplesForScope(scope),
+		Audit:                       audit,
+		Departments:                 a.store.CatalogDepartmentsForScope(scope),
+		Units:                       a.store.CatalogUnitsForScope(scope),
+		Methods:                     a.store.CatalogMethodsForScope(scope),
+		Analytes:                    a.store.CatalogAnalytesForScope(scope),
+		Services:                    a.store.AnalysisServicesForScope(scope),
+		Profiles:                    a.store.AnalysisProfilesForScope(scope),
+		SampleReference:             references,
+		MatrixReferences:            sampleReferencesByKind(references, lab.SampleReferenceMatrix),
+		ContainerReferences:         sampleReferencesByKind(references, lab.SampleReferenceContainer),
+		PreservativeReferences:      sampleReferencesByKind(references, lab.SampleReferencePreservative),
+		StorageLocationReferences:   sampleReferencesByKind(references, lab.SampleReferenceStorageLocation),
+		ReceivedConditionReferences: sampleReferencesByKind(references, lab.SampleReferenceReceivedCondition),
 	}
+}
+
+func sampleReferencesByKind(items []lab.SampleReferenceItem, kind lab.SampleReferenceKind) []lab.SampleReferenceItem {
+	filtered := make([]lab.SampleReferenceItem, 0, len(items))
+	for _, item := range items {
+		if item.Kind == kind {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func (a *app) demoReset(w http.ResponseWriter, r *http.Request) {
@@ -527,7 +548,26 @@ func (a *app) createSample(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	input := lab.CreateSampleInput{ClientID: r.FormValue("client_id"), Project: r.FormValue("project"), Matrix: r.FormValue("matrix"), Tests: splitTests(r.FormValue("tests"))}
+	input := lab.CreateSampleInput{
+		ClientID:            r.FormValue("client_id"),
+		ProjectID:           r.FormValue("project_id"),
+		Project:             r.FormValue("project"),
+		ClientSampleID:      r.FormValue("client_sample_id"),
+		LabSampleID:         r.FormValue("lab_sample_id"),
+		Matrix:              r.FormValue("matrix"),
+		MatrixReferenceID:   r.FormValue("matrix_reference_id"),
+		ContainerID:         r.FormValue("container_id"),
+		PreservativeID:      r.FormValue("preservative_id"),
+		StorageLocationID:   r.FormValue("storage_location_id"),
+		ReceivedConditionID: r.FormValue("received_condition_id"),
+		SampledAt:           parseOptionalRequestTime(r.FormValue("sampled_at")),
+		ReceivedAt:          parseOptionalRequestTime(r.FormValue("received_at")),
+		Priority:            lab.SamplePriority(r.FormValue("priority")),
+		Comments:            r.FormValue("comments"),
+		AnalysisProfileIDs:  splitIDs(r.Form["analysis_profile_ids"]),
+		AnalysisServiceIDs:  splitIDs(r.Form["analysis_service_ids"]),
+		Tests:               splitTests(r.FormValue("tests")),
+	}
 	sample, err := a.store.CreateSampleForScope(scopeFromRequest(r), input, actor(r))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -709,6 +749,19 @@ func splitTests(raw string) []string {
 		}
 	}
 	return out
+}
+
+func parseOptionalRequestTime(raw string) time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04", "2006-01-02"} {
+		if parsed, err := time.Parse(layout, raw); err == nil {
+			return parsed.UTC()
+		}
+	}
+	return time.Time{}
 }
 
 func demoResetActor(r *http.Request) lab.ActorContext {
