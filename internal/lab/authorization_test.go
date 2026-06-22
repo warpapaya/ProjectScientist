@@ -55,6 +55,7 @@ func TestAuthorizeOperationDeniesAndAuditsEveryProtectedOperation(t *testing.T) 
 		OperationAuditExport,
 		OperationImportRun,
 		OperationExportRun,
+		OperationCatalogConfigure,
 		OperationAdminConfigure,
 	}
 
@@ -111,6 +112,7 @@ func TestPolicyAllowsExpectedRolesForProtectedOperations(t *testing.T) {
 		{OperationAuditExport, RoleAdmin},
 		{OperationImportRun, RoleMigrationService},
 		{OperationExportRun, RoleLabManager},
+		{OperationCatalogConfigure, RoleLabManager},
 		{OperationAdminConfigure, RoleAdmin},
 	}
 	for _, tc := range cases {

@@ -119,6 +119,77 @@
 
     <section class="panel">
       <div class="section-head">
+        <h2>Analysis catalog</h2>
+        <p>Configure lab-test departments, methods, analytes, units, services, and reusable panels.</p>
+      </div>
+      <section class="grid two">
+        <form class="form" method="post" action="/api/catalog/departments">
+          <h3>Department / category</h3>
+          <input name="name" placeholder="Metals" required>
+          <input name="sort_order" placeholder="Sort order e.g. 10">
+          <button>Create department</button>
+        </form>
+        <form class="form" method="post" action="/api/catalog/services">
+          <h3>Analysis service</h3>
+          <input name="name" placeholder="Lead dissolved" required>
+          <select name="department_id" required>
+            <option value="">Department…</option>
+            {{range .Departments}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+          </select>
+          <select name="method_id"><option value="">Method…</option>{{range .Methods}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+          <select name="analyte_id"><option value="">Analyte…</option>{{range .Analytes}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+          <select name="unit_id"><option value="">Unit…</option>{{range .Units}}<option value="{{.ID}}">{{.Symbol}}</option>{{end}}</select>
+          <input name="sort_order" placeholder="Sort order e.g. 20">
+          <button>Create service</button>
+        </form>
+      </section>
+      <section class="grid two">
+        <form class="form" method="post" action="/api/catalog/units">
+          <h3>Unit</h3>
+          <input name="name" placeholder="Milligrams per liter" required>
+          <input name="symbol" placeholder="mg/L" required>
+          <button>Create unit</button>
+        </form>
+        <form class="form" method="post" action="/api/catalog/methods">
+          <h3>Method</h3>
+          <input name="name" placeholder="EPA 200.8" required>
+          <input name="description" placeholder="Optional description">
+          <button>Create method</button>
+        </form>
+      </section>
+      <section class="grid two">
+        <form class="form" method="post" action="/api/catalog/analytes">
+          <h3>Analyte</h3>
+          <input name="name" placeholder="Lead" required>
+          <select name="default_unit_id"><option value="">Default unit…</option>{{range .Units}}<option value="{{.ID}}">{{.Symbol}}</option>{{end}}</select>
+          <button>Create analyte</button>
+        </form>
+        <form class="form" method="post" action="/api/catalog/profiles">
+          <h3>Profile / panel</h3>
+          <input name="name" placeholder="Metals Panel" required>
+          <textarea name="service_ids" placeholder="Service IDs in report order, comma or newline separated" required></textarea>
+          <button>Create profile</button>
+        </form>
+      </section>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Service</th><th>Department</th><th>Method</th><th>Analyte</th><th>Unit</th><th>Order</th></tr></thead>
+          <tbody>
+          {{range .Services}}
+            <tr><td><strong>{{.Name}}</strong><small>{{.ID}}</small></td><td>{{.DepartmentName}}</td><td>{{.MethodName}}</td><td>{{.AnalyteName}}</td><td>{{.UnitSymbol}}</td><td>{{.SortOrder}}</td></tr>
+          {{else}}
+            <tr><td colspan="6" class="empty">No analysis services configured yet.</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+      <ul class="list">
+        {{range .Profiles}}<li><strong>{{.Name}}</strong><span>{{len .Services}} services</span><small>{{range .Services}}{{.Name}}; {{end}}</small></li>{{else}}<li class="empty">No profiles yet.</li>{{end}}
+      </ul>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
         <h2>Workflow board</h2>
         <p>One-click legal transitions only. The store rejects illegal jumps and audits every accepted move.</p>
       </div>

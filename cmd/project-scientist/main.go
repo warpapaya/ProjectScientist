@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +37,12 @@ type pageData struct {
 	ClientDefaults []lab.ClientDefaults
 	Samples        []lab.Sample
 	Audit          []lab.AuditEvent
+	Departments    []lab.CatalogDepartment
+	Units          []lab.CatalogUnit
+	Methods        []lab.CatalogMethod
+	Analytes       []lab.CatalogAnalyte
+	Services       []lab.AnalysisService
+	Profiles       []lab.AnalysisProfile
 }
 
 func main() {
@@ -103,6 +110,12 @@ func serve() error {
 	mux.HandleFunc("POST /api/client-defaults", application.upsertClientDefaults)
 	mux.HandleFunc("POST /api/samples", application.createSample)
 	mux.HandleFunc("POST /api/samples/", application.transitionSample)
+	mux.HandleFunc("POST /api/catalog/departments", application.createCatalogDepartment)
+	mux.HandleFunc("POST /api/catalog/units", application.createCatalogUnit)
+	mux.HandleFunc("POST /api/catalog/methods", application.createCatalogMethod)
+	mux.HandleFunc("POST /api/catalog/analytes", application.createCatalogAnalyte)
+	mux.HandleFunc("POST /api/catalog/services", application.createAnalysisService)
+	mux.HandleFunc("POST /api/catalog/profiles", application.createAnalysisProfile)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	log.Printf("Project Scientist listening on %s", addr)
 	return http.ListenAndServe(addr, securityHeaders(mux))
@@ -404,6 +417,12 @@ func (a *app) pageData(scope lab.Scope, auditLimit int) pageData {
 		ClientDefaults: a.store.AllClientDefaultsForScope(scope),
 		Samples:        a.store.SamplesForScope(scope),
 		Audit:          audit,
+		Departments:    a.store.CatalogDepartmentsForScope(scope),
+		Units:          a.store.CatalogUnitsForScope(scope),
+		Methods:        a.store.CatalogMethodsForScope(scope),
+		Analytes:       a.store.CatalogAnalytesForScope(scope),
+		Services:       a.store.AnalysisServicesForScope(scope),
+		Profiles:       a.store.AnalysisProfilesForScope(scope),
 	}
 }
 
@@ -535,6 +554,93 @@ func (a *app) transitionSample(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+}
+
+func (a *app) createCatalogDepartment(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	department, err := a.store.CreateCatalogDepartmentForScope(scopeFromRequest(r), lab.CatalogDepartmentInput{Name: r.FormValue("name"), SortOrder: parseInt(r.FormValue("sort_order"))}, actor(r))
+	writeCatalogResult(w, r, department, err)
+}
+
+func (a *app) createCatalogUnit(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	unit, err := a.store.CreateCatalogUnitForScope(scopeFromRequest(r), lab.CatalogUnitInput{Name: r.FormValue("name"), Symbol: r.FormValue("symbol")}, actor(r))
+	writeCatalogResult(w, r, unit, err)
+}
+
+func (a *app) createCatalogMethod(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	method, err := a.store.CreateCatalogMethodForScope(scopeFromRequest(r), lab.CatalogMethodInput{Name: r.FormValue("name"), Description: r.FormValue("description")}, actor(r))
+	writeCatalogResult(w, r, method, err)
+}
+
+func (a *app) createCatalogAnalyte(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	analyte, err := a.store.CreateCatalogAnalyteForScope(scopeFromRequest(r), lab.CatalogAnalyteInput{Name: r.FormValue("name"), DefaultUnitID: r.FormValue("default_unit_id")}, actor(r))
+	writeCatalogResult(w, r, analyte, err)
+}
+
+func (a *app) createAnalysisService(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	service, err := a.store.CreateAnalysisServiceForScope(scopeFromRequest(r), lab.AnalysisServiceInput{Name: r.FormValue("name"), DepartmentID: r.FormValue("department_id"), MethodID: r.FormValue("method_id"), AnalyteID: r.FormValue("analyte_id"), UnitID: r.FormValue("unit_id"), SortOrder: parseInt(r.FormValue("sort_order"))}, actor(r))
+	writeCatalogResult(w, r, service, err)
+}
+
+func (a *app) createAnalysisProfile(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	profile, err := a.store.CreateAnalysisProfileForScope(scopeFromRequest(r), lab.AnalysisProfileInput{Name: r.FormValue("name"), ServiceIDs: splitIDs(r.Form["service_ids"])}, actor(r))
+	writeCatalogResult(w, r, profile, err)
+}
+
+func writeCatalogResult(w http.ResponseWriter, r *http.Request, value any, err error) {
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, lab.ErrAuthorizationDenied) {
+			status = http.StatusForbidden
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	if wantsJSON(r) {
+		writeJSON(w, value, http.StatusCreated)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func parseInt(raw string) int {
+	value, _ := strconv.Atoi(strings.TrimSpace(raw))
+	return value
+}
+
+func splitIDs(values []string) []string {
+	ids := []string{}
+	for _, value := range values {
+		for _, id := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == '\n' }) {
+			if trimmed := strings.TrimSpace(id); trimmed != "" {
+				ids = append(ids, trimmed)
+			}
+		}
+	}
+	return ids
 }
 
 func splitTests(raw string) []string {
