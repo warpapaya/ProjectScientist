@@ -42,11 +42,13 @@ make docker-test
 make docker-smoke
 ```
 
-Seed synthetic local-only data through the running dev API:
+Seed/reset deterministic synthetic local-only data through the running dev API:
 
 ```bash
-make dev-seed
+make demo-reset
 ```
+
+This is safe to rerun and recreates the fixture-backed `C-00001` / `S-000001` demo state from `fixtures/mvp_synthetic_lab.json`.
 
 Stop the local container while preserving the named development data volume:
 

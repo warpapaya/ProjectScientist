@@ -94,6 +94,26 @@ make dev-down
 
 `make docker-smoke` starts the local container, waits for `/healthz`, seeds synthetic demo data through the public local API, and verifies `/api/state` contains the synthetic lab. The seed path is intentionally API-level so it exercises the running container instead of mutating files directly.
 
+## Deterministic local demo seed/reset
+
+Use the deterministic demo reset command when you need a known MVP fixture state from a clean clone or from an already-running local Docker stack:
+
+```bash
+make demo-reset
+```
+
+This command starts the loopback-only Docker development container if needed, calls the lab-test-only `POST /api/demo/reset` endpoint, and seeds from `fixtures/mvp_synthetic_lab.json`. It is safe to rerun: each run clears only the local prototype SQLite store in the `project-scientist-data` Docker volume and recreates exactly one synthetic client/sample pair:
+
+```text
+client_id=C-00001
+sample_id=S-000001
+fixture_id=psc-mvp-synthetic-lab-v1
+client=Okefenokee Synthetic Water Authority
+analyses=4
+```
+
+The reset endpoint is disabled unless `PSC_ENABLE_DEMO_RESET=true`; the checked-in Compose dev service enables it and points `PSC_SYNTHETIC_FIXTURE_PATH` at `/app/fixtures/mvp_synthetic_lab.json` inside the runtime image. Do not enable this endpoint on any customer, shared, or production-like deployment.
+
 ## Data persistence and cleanup
 
 The development app stores runtime files under `/data` inside the container, backed by the named Docker volume `project-scientist-data`.
@@ -112,7 +132,7 @@ Local-only reset, destructive to this dev volume:
 make dev-reset
 ```
 
-`make dev-reset` expands to `docker compose down --volumes --remove-orphans`. Only use it when you intentionally want to discard local prototype data. Do not run it against anything containing customer or production data; this lane should never have that data in the first place.
+`make dev-reset` expands to `docker compose down --volumes --remove-orphans`. Only use it when you intentionally want to discard the entire local prototype data volume. For the deterministic MVP demo fixture state, prefer `make demo-reset`; it leaves the container up and resets/reseeds through the local API. Do not run either reset path against anything containing customer or production data; this lane should never have that data in the first place.
 
 Repo-local runtime directories are ignored and excluded from Docker context: `data/`, `var/`, `tmp/`, build outputs, logs, editor folders, and `.DS_Store`.
 
@@ -140,26 +160,17 @@ It does not deploy anything, publish images, touch customer/prod data, or make c
 ## Workflow targets
 
 ```text
-make test             # host go test -mod=readonly ./...
-make vet              # host go vet ./...
-make fmt-check        # verify gofmt cleanliness
-make ci               # local aggregate: host gates + Docker test/build
-make docker-test      # Docker/Compose test lane
-make docker-build     # build runtime container image
-make docker-smoke     # start local app, seed synthetic data, verify API state
-make image-review     # print local image size/user/cmd/layers
-make ops-db-migrate   # run SQLite migrations for PSC_DB (default data/project-scientist.db)
-make ops-db-status    # print schema/client/sample/audit counts for PSC_DB
-make ops-audit-verify # verify the local audit hash chain
-make ops-seed         # seed synthetic local-only data into PSC_DB
-make ops-reset        # destructive local reset of PSC_DB, requires force in wrapper
-make ops-backup       # create PSC_BACKUP from PSC_DB with SQLite VACUUM INTO
-make ops-restore      # destructive local restore from PSC_BACKUP into PSC_DB
-make ops-smoke        # HTTP smoke against DEV_BASE_URL
-make dev-up           # build/start local dev container and health check 127.0.0.1:8097
-make dev-seed         # seed synthetic local-only demo data via API
-make dev-down         # stop local dev container, preserve named volume
-make dev-reset        # destructive local reset of the named dev volume
+make test         # host go test -mod=readonly ./...
+make vet          # host go vet ./...
+make fmt-check    # verify gofmt cleanliness
+make ci           # local aggregate: host gates + Docker test/build
+make docker-test  # Docker/Compose test lane
+make docker-build # build runtime container image
+make docker-smoke # start local app, seed synthetic data, verify API state
+make image-review # print local image size/user/cmd/layers
+make dev-up       # build/start local dev container and health check 127.0.0.1:8097
+make dev-seed     # reset/seed deterministic synthetic local-only demo data via API
+make demo-reset   # start Docker dev app if needed, then reset/seed fixture state
+make dev-down     # stop local dev container, preserve named volume
+make dev-reset    # destructive local reset of the named dev volume
 ```
-
-See [operations.md](operations.md) for command semantics, stop-lines, backup/restore behavior, and the logs/metrics plan.
