@@ -69,6 +69,7 @@ Needed:
 - Sample intake with client sample id, lab id, project, sampled/received dates, matrix, priority, comments.
 - Containers, preservation, received condition, cooler/batch support.
 - Chain-of-custody events: received, transferred, split, stored, disposed, returned.
+  - Lab-test v1: custody events are append-only rows with actor/time/location/reason, tenant/lab scope, audit entries for allowed and denied record attempts, API exposure through sample state, and workflow-board history/forms.
 - Barcode/label generation and print workflows.
 - Bulk intake and repeatable templates.
 
