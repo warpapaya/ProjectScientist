@@ -25,10 +25,15 @@ type app struct {
 }
 
 type pageData struct {
-	Scope   lab.Scope
-	Clients []lab.Client
-	Samples []lab.Sample
-	Audit   []lab.AuditEvent
+	Scope          lab.Scope
+	Clients        []lab.Client
+	Sites          []lab.Site
+	Contacts       []lab.Contact
+	ContactRoles   []lab.ContactRole
+	Projects       []lab.Project
+	ClientDefaults []lab.ClientDefaults
+	Samples        []lab.Sample
+	Audit          []lab.AuditEvent
 }
 
 func main() {
@@ -83,6 +88,11 @@ func serve() error {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /api/state", application.apiState)
 	mux.HandleFunc("POST /api/clients", application.createClient)
+	mux.HandleFunc("POST /api/sites", application.createSite)
+	mux.HandleFunc("POST /api/contacts", application.createContact)
+	mux.HandleFunc("POST /api/contact-roles", application.assignContactRole)
+	mux.HandleFunc("POST /api/projects", application.createProject)
+	mux.HandleFunc("POST /api/client-defaults", application.upsertClientDefaults)
 	mux.HandleFunc("POST /api/samples", application.createSample)
 	mux.HandleFunc("POST /api/samples/", application.transitionSample)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
@@ -363,16 +373,29 @@ func (a *app) index(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scope := scopeFromRequest(r)
-	audit, _ := a.store.AuditEventsForScope(scope, 20)
-	if err := a.tmpl.Execute(w, pageData{Scope: scope, Clients: a.store.ClientsForScope(scope), Samples: a.store.SamplesForScope(scope), Audit: audit}); err != nil {
+	if err := a.tmpl.Execute(w, a.pageData(scope, 20)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
 func (a *app) apiState(w http.ResponseWriter, r *http.Request) {
 	scope := scopeFromRequest(r)
-	audit, _ := a.store.AuditEventsForScope(scope, 50)
-	writeJSON(w, pageData{Scope: scope, Clients: a.store.ClientsForScope(scope), Samples: a.store.SamplesForScope(scope), Audit: audit}, http.StatusOK)
+	writeJSON(w, a.pageData(scope, 50), http.StatusOK)
+}
+
+func (a *app) pageData(scope lab.Scope, auditLimit int) pageData {
+	audit, _ := a.store.AuditEventsForScope(scope, auditLimit)
+	return pageData{
+		Scope:          scope,
+		Clients:        a.store.ClientsForScope(scope),
+		Sites:          a.store.SitesForScope(scope),
+		Contacts:       a.store.ContactsForScope(scope),
+		ContactRoles:   a.store.ContactRolesForScope(scope),
+		Projects:       a.store.ProjectsForScope(scope),
+		ClientDefaults: a.store.AllClientDefaultsForScope(scope),
+		Samples:        a.store.SamplesForScope(scope),
+		Audit:          audit,
+	}
 }
 
 func (a *app) createClient(w http.ResponseWriter, r *http.Request) {
@@ -387,6 +410,63 @@ func (a *app) createClient(w http.ResponseWriter, r *http.Request) {
 	}
 	if wantsJSON(r) {
 		writeJSON(w, client, http.StatusCreated)
+		return
+	}
+	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+}
+
+func (a *app) createSite(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	site, err := a.store.CreateSiteForScope(scopeFromRequest(r), lab.SiteInput{ClientID: r.FormValue("client_id"), Name: r.FormValue("name"), Division: r.FormValue("division"), Address: r.FormValue("address")}, actor(r))
+	writeMutationResponse(w, r, site, err)
+}
+
+func (a *app) createContact(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	contact, err := a.store.CreateContactForScope(scopeFromRequest(r), lab.ContactInput{ClientID: r.FormValue("client_id"), SiteID: r.FormValue("site_id"), Name: r.FormValue("name"), Email: r.FormValue("email"), Phone: r.FormValue("phone")}, actor(r))
+	writeMutationResponse(w, r, contact, err)
+}
+
+func (a *app) assignContactRole(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	role, err := a.store.AssignContactRoleForScope(scopeFromRequest(r), lab.ContactRoleInput{ContactID: r.FormValue("contact_id"), Role: r.FormValue("role")}, actor(r))
+	writeMutationResponse(w, r, role, err)
+}
+
+func (a *app) createProject(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	project, err := a.store.CreateProjectForScope(scopeFromRequest(r), lab.ProjectInput{ClientID: r.FormValue("client_id"), SiteID: r.FormValue("site_id"), Name: r.FormValue("name"), WorkOrder: r.FormValue("work_order"), DefaultMatrix: r.FormValue("default_matrix"), DefaultTests: splitTests(r.FormValue("default_tests"))}, actor(r))
+	writeMutationResponse(w, r, project, err)
+}
+
+func (a *app) upsertClientDefaults(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	defaults, err := a.store.UpsertClientDefaultsForScope(scopeFromRequest(r), lab.ClientDefaultsInput{ClientID: r.FormValue("client_id"), ReportTemplate: r.FormValue("report_template"), InvoiceEmail: r.FormValue("invoice_email"), DefaultMatrix: r.FormValue("default_matrix"), DefaultTests: splitTests(r.FormValue("default_tests"))}, actor(r))
+	writeMutationResponse(w, r, defaults, err)
+}
+
+func writeMutationResponse(w http.ResponseWriter, r *http.Request, value any, err error) {
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if wantsJSON(r) {
+		writeJSON(w, value, http.StatusCreated)
 		return
 	}
 	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)

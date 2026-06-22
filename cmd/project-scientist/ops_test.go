@@ -37,7 +37,7 @@ func TestOperatorAuditVerifyAndDatabaseStatusCommands(t *testing.T) {
 		t.Fatalf("db status command: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{"schema_version=2", "clients=1", "audit_events=1"} {
+	for _, want := range []string{"schema_version=3", "clients=1", "audit_events=1"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("db status output %q missing %q", got, want)
 		}
