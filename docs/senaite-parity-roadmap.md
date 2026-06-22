@@ -84,6 +84,8 @@ Needed:
 
 ### 6. QC and batch acceptance
 
+Detailed QC taxonomy and relationship semantics are maintained in `docs/qc-sample-taxonomy.md`.
+
 Needed:
 - QC sample types: blank, duplicate, spike, LCS, MS/MSD, control sample, calibration verification.
 - QC relationships to client samples and batches.
