@@ -110,7 +110,7 @@ Needed:
 - CSV/XLSX import/export.
 - EDD/export framework: fixed-width/CSV/XLSX initially; EQuIS-style only after authoritative spec/validation.
 - Legacy ID/path/UID preservation.
-- Migration audit provenance and reconciliation reports.
+- Migration audit provenance and reconciliation reports (see `docs/migration-reconciliation-reports.md` for the lab-test report artifact contract).
 
 ### 9. UX parity-plus
 
