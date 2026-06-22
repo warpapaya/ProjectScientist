@@ -149,7 +149,15 @@ Normal stop:
 make dev-down
 ```
 
-This removes the project container/network and preserves the project-scoped `project-scientist-data` volume. It also runs `scripts/dev-clean-containers.sh`, which removes stale Project Scientist containers/networks from prior interrupted local lab runs while still preserving all named volumes for inspection.
+This removes only this checkout's Compose projects (`$(COMPOSE_PROJECT_NAME)`, `$(COMPOSE_PROJECT_NAME)-test`, and `$(COMPOSE_PROJECT_NAME)-smoke`) by exact Docker Compose project label and preserves the project-scoped `project-scientist-data` volume. It intentionally does not run a broad `name=project-scientist` cleanup because concurrent Kanban/dev workers may have legitimate Project Scientist containers and networks in other workspaces.
+
+For diagnostic/admin cleanup of stale local lab resources outside the current project, use an explicit name pattern:
+
+```bash
+make dev-clean-by-name NAME_PATTERN=project-scientist-my-worktree
+```
+
+That target is not part of normal `dev-down`; inspect labels/working directories first and keep the pattern narrow. Named volumes are still preserved.
 
 Local-only reset, destructive to this dev volume:
 
@@ -196,6 +204,7 @@ make image-review # print local image size/user/cmd/layers
 make dev-up       # build/start local dev container and health check 127.0.0.1:8097
 make dev-seed     # reset/seed deterministic synthetic local-only demo data via API
 make demo-reset   # start Docker dev app if needed, then reset/seed fixture state
-make dev-down     # stop local dev container, preserve named volume
+make dev-down     # stop only current dev/test/smoke Compose projects, preserve named volumes
+make dev-clean-by-name NAME_PATTERN=... # admin-only stale cleanup with explicit narrow pattern
 make dev-reset    # destructive local reset of the named dev volume
 ```

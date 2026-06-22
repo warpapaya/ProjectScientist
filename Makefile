@@ -1,4 +1,4 @@
-.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke backup-restore-proof image-review dev-up dev-down dev-reset dev-seed demo-reset
+.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke backup-restore-proof image-review dev-up dev-down dev-clean-projects dev-clean-by-name dev-reset dev-seed demo-reset
 
 WORKTREE_SLUG ?= $(shell basename "$$(pwd)" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]_.-' '-' | sed 's/^-//;s/-$$//')
 COMPOSE_PROJECT_NAME ?= project-scientist-$(WORKTREE_SLUG)
@@ -65,7 +65,19 @@ dev-down:
 	$(COMPOSE_RUN) down --remove-orphans
 	@$(COMPOSE_TEST_RUN) down --remove-orphans >/dev/null 2>&1 || true
 	@$(COMPOSE_SMOKE_RUN) down --remove-orphans >/dev/null 2>&1 || true
-	@./scripts/dev-clean-containers.sh
+	@./scripts/dev-clean-containers.sh "$(COMPOSE_PROJECT_NAME)" "$(COMPOSE_PROJECT_NAME)-test" "$(COMPOSE_PROJECT_NAME)-smoke"
+
+# Explicit scoped cleanup for known Compose project names; preserves named volumes.
+dev-clean-projects:
+	@./scripts/dev-clean-containers.sh "$(COMPOSE_PROJECT_NAME)" "$(COMPOSE_PROJECT_NAME)-test" "$(COMPOSE_PROJECT_NAME)-smoke"
+
+# Diagnostic/admin-only stale cleanup. Requires an explicit Docker name pattern and
+# is intentionally not used by normal dev-down because concurrent workers may share
+# the project-scientist name prefix.
+dev-clean-by-name:
+	@test -n "$(NAME_PATTERN)" || (echo 'NAME_PATTERN is required, e.g. make dev-clean-by-name NAME_PATTERN=project-scientist-my-worktree' >&2; exit 2)
+	@ids="$$(docker ps -aq --filter "name=$(NAME_PATTERN)")"; test -z "$$ids" || docker rm -f $$ids
+	@ids="$$(docker network ls -q --filter "name=$(NAME_PATTERN)")"; test -z "$$ids" || docker network rm $$ids
 
 dev-reset:
 	$(COMPOSE_RUN) down --volumes --remove-orphans

@@ -57,7 +57,7 @@ make demo-reset
 
 This is safe to rerun and recreates the fixture-backed `C-00001` / `S-000001` demo state from `fixtures/mvp_synthetic_lab.json`.
 
-Stop the local container while preserving the named development data volume:
+Stop only this checkout's dev/test/smoke Compose projects while preserving named development data volumes:
 
 ```bash
 make dev-down
