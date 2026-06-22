@@ -107,6 +107,8 @@ Acceptance tests:
 - Denied events are audited with outcome and reason/error code.
 - Authorization is enforced server-side and cannot be bypassed through UI-only restrictions.
 
+Lab-test implementation note (PSC-RM-005): the committed server-side policy layer defines protected operations for client/contact/project, sample, result, report, audit, import/export, and admin/security configuration. Store mutations call the policy before writing state. Denied authorization attempts commit safe audit events with `outcome=denied` and `reason=authorization_denied` without full request payloads.
+
 ### 4. Tenant/lab boundary gate
 
 Current bootstrap behavior: clients exist but there is no tenant/lab boundary.
