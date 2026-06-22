@@ -5,7 +5,8 @@ func testActor(userID string) ActorContext {
 		UserID:            userID,
 		DisplayName:       userID,
 		AuthProvider:      "test",
-		TenantMemberships: []TenantMembership{{TenantID: DefaultTenantID}},
+		TenantMemberships: []TenantMembership{{TenantID: DefaultTenantID, Roles: []string{string(RoleAdmin)}}},
+		Roles:             []string{string(RoleAdmin)},
 		RequestID:         "req-" + userID,
 		CorrelationID:     "corr-" + userID,
 	})

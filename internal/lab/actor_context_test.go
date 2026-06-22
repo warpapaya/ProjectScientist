@@ -59,7 +59,7 @@ func TestAuditEventRecordsActorContext(t *testing.T) {
 	actor := MustActorContext(ActorContextInput{
 		UserID:            "user-friday",
 		DisplayName:       "Friday Ops",
-		TenantMemberships: []TenantMembership{{TenantID: "clearline-demo", Roles: []string{"lab-manager"}}},
+		TenantMemberships: []TenantMembership{{TenantID: DefaultTenantID, Roles: []string{"lab-manager"}}},
 		Roles:             []string{"lab-manager"},
 		ServiceAccount:    false,
 		RequestID:         "req-store",
