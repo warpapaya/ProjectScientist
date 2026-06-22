@@ -17,7 +17,7 @@ func TestOperatorAuditVerifyAndDatabaseStatusCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	if _, err := store.CreateClient("Ops Lab", "ops@example.test", "operator"); err != nil {
+	if _, err := store.CreateClient("Ops Lab", "ops@example.test", cliActor("operator", lab.RoleAdmin)); err != nil {
 		t.Fatalf("seed client: %v", err)
 	}
 	if err := store.Close(); err != nil {

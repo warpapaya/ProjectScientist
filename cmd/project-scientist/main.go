@@ -20,8 +20,10 @@ import (
 )
 
 type app struct {
-	store *lab.Store
-	tmpl  *template.Template
+	store            *lab.Store
+	tmpl             *template.Template
+	demoResetEnabled bool
+	fixturePath      string
 }
 
 type pageData struct {
@@ -82,11 +84,17 @@ func serve() error {
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}
-	application := &app{store: store, tmpl: template.Must(template.ParseFiles("web/templates/index.html"))}
+	application := &app{
+		store:            store,
+		tmpl:             template.Must(template.ParseFiles("web/templates/index.html")),
+		demoResetEnabled: strings.EqualFold(getenv("PSC_ENABLE_DEMO_RESET", "false"), "true"),
+		fixturePath:      getenv("PSC_SYNTHETIC_FIXTURE_PATH", "/app/fixtures/mvp_synthetic_lab.json"),
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", application.index)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /api/state", application.apiState)
+	mux.HandleFunc("POST /api/demo/reset", application.demoReset)
 	mux.HandleFunc("POST /api/clients", application.createClient)
 	mux.HandleFunc("POST /api/sites", application.createSite)
 	mux.HandleFunc("POST /api/contacts", application.createContact)
@@ -195,11 +203,12 @@ func seedDB(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	defer store.Close()
-	client, err := store.CreateClient("Clearline Synthetic Lab", "synthetic@example.test", "psc-operator-seed")
+	seedActor := cliActor("psc-operator-seed", lab.RoleAdmin)
+	client, err := store.CreateClient("Clearline Synthetic Lab", "synthetic@example.test", seedActor)
 	if err != nil {
 		return err
 	}
-	if _, err := store.CreateSample(lab.CreateSampleInput{ClientID: client.ID, Project: "Synthetic Drinking Water Compliance", Matrix: "Water", Tests: []string{"pH", "Turbidity", "Lead"}}, "psc-operator-seed"); err != nil {
+	if _, err := store.CreateSample(lab.CreateSampleInput{ClientID: client.ID, Project: "Synthetic Drinking Water Compliance", Matrix: "Water", Tests: []string{"pH", "Turbidity", "Lead"}}, seedActor); err != nil {
 		return err
 	}
 	fmt.Fprintf(stdout, "seed ok db=%s client_id=%s\n", *dbPath, client.ID)
@@ -398,6 +407,23 @@ func (a *app) pageData(scope lab.Scope, auditLimit int) pageData {
 	}
 }
 
+func (a *app) demoReset(w http.ResponseWriter, r *http.Request) {
+	if !a.demoResetEnabled {
+		http.NotFound(w, r)
+		return
+	}
+	summary, err := a.store.ResetAndSeedSyntheticDemo(a.fixturePath, demoResetActor(r))
+	if err != nil {
+		if errors.Is(err, lab.ErrAuthorizationDenied) {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, summary, http.StatusOK)
+}
+
 func (a *app) createClient(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -522,18 +548,40 @@ func splitTests(raw string) []string {
 	return out
 }
 
-func actor(r *http.Request) string {
-	if actor := strings.TrimSpace(r.Header.Get("X-PSC-Actor")); actor != "" {
-		return actor
+func demoResetActor(r *http.Request) lab.ActorContext {
+	requestID := requestID(r)
+	return lab.MustActorContext(lab.ActorContextInput{
+		UserID:            "local-demo-reset-admin",
+		DisplayName:       "local-demo-reset-admin",
+		AuthProvider:      "local-dev-demo-reset",
+		RequestID:         requestID,
+		CorrelationID:     requestID,
+		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleAdmin)}}},
+		Roles:             []string{string(lab.RoleAdmin)},
+	})
+}
+
+func actor(r *http.Request) lab.ActorContext {
+	requestID := requestID(r)
+	scope := scopeFromRequest(r)
+	roles := []string{string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser)}
+	memberships := []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: roles}}
+	if scope.TenantID != lab.DefaultTenantID {
+		memberships = append(memberships, lab.TenantMembership{TenantID: scope.TenantID, Roles: roles})
 	}
-	if actor := strings.TrimSpace(r.FormValue("actor")); actor != "" {
-		return actor
-	}
-	return "lab-dev"
+	return lab.MustActorContext(lab.ActorContextInput{
+		UserID:            "lab-dev",
+		DisplayName:       "lab-dev",
+		AuthProvider:      "local-dev",
+		RequestID:         requestID,
+		CorrelationID:     requestID,
+		TenantMemberships: memberships,
+		Roles:             roles,
+	})
 }
 
 func scopeFromRequest(r *http.Request) lab.Scope {
-	scope := lab.DefaultScope
+	scope := lab.Scope{TenantID: lab.DefaultTenantID, LabID: lab.DefaultLabID}
 	if tenantID := strings.TrimSpace(r.Header.Get("X-PSC-Tenant-ID")); tenantID != "" {
 		scope.TenantID = tenantID
 	} else if tenantID := strings.TrimSpace(r.FormValue("tenant_id")); tenantID != "" {
@@ -556,6 +604,30 @@ func scopedHome(scope lab.Scope) string {
 	values.Set("tenant_id", scope.TenantID)
 	values.Set("lab_id", scope.LabID)
 	return "/?" + values.Encode()
+}
+
+func requestID(r *http.Request) string {
+	requestID := strings.TrimSpace(r.Header.Get("X-PSC-Request-ID"))
+	if requestID == "" {
+		requestID = "local-http-request"
+	}
+	return requestID
+}
+
+func cliActor(userID string, roles ...lab.Role) lab.ActorContext {
+	roleStrings := make([]string, 0, len(roles))
+	for _, role := range roles {
+		roleStrings = append(roleStrings, string(role))
+	}
+	return lab.MustActorContext(lab.ActorContextInput{
+		UserID:            userID,
+		DisplayName:       userID,
+		AuthProvider:      "local-cli",
+		RequestID:         "local-cli-request",
+		CorrelationID:     "local-cli-request",
+		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: roleStrings}},
+		Roles:             roleStrings,
+	})
 }
 
 func wantsJSON(r *http.Request) bool {

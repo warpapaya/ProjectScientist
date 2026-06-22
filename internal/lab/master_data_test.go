@@ -14,28 +14,30 @@ func TestMasterDataCreatesClientSitesContactsRolesProjectsDefaultsScopedAndAudit
 
 	alpha := Scope{TenantID: "tenant-alpha", LabID: "water-lab"}
 	beta := Scope{TenantID: "tenant-beta", LabID: "water-lab"}
+	manager := testScopedActor("manager", alpha.TenantID)
+	mallory := testScopedActor("mallory", beta.TenantID)
 
-	client, err := store.CreateClientForScope(alpha, "Alpha Environmental", "lab@example.test", "manager")
+	client, err := store.CreateClientForScope(alpha, "Alpha Environmental", "lab@example.test", manager)
 	if err != nil {
 		t.Fatalf("create client: %v", err)
 	}
-	defaults, err := store.UpsertClientDefaultsForScope(alpha, ClientDefaultsInput{ClientID: client.ID, ReportTemplate: "alpha-coa", InvoiceEmail: "billing@example.test", DefaultMatrix: "Water", DefaultTests: []string{"pH", "Turbidity"}}, "manager")
+	defaults, err := store.UpsertClientDefaultsForScope(alpha, ClientDefaultsInput{ClientID: client.ID, ReportTemplate: "alpha-coa", InvoiceEmail: "billing@example.test", DefaultMatrix: "Water", DefaultTests: []string{"pH", "Turbidity"}}, manager)
 	if err != nil {
 		t.Fatalf("upsert defaults: %v", err)
 	}
-	site, err := store.CreateSiteForScope(alpha, SiteInput{ClientID: client.ID, Name: "North Plant", Division: "Water", Address: "101 Intake Rd"}, "manager")
+	site, err := store.CreateSiteForScope(alpha, SiteInput{ClientID: client.ID, Name: "North Plant", Division: "Water", Address: "101 Intake Rd"}, manager)
 	if err != nil {
 		t.Fatalf("create site: %v", err)
 	}
-	contact, err := store.CreateContactForScope(alpha, ContactInput{ClientID: client.ID, SiteID: site.ID, Name: "Avery Chemist", Email: "avery@example.test", Phone: "555-0100"}, "manager")
+	contact, err := store.CreateContactForScope(alpha, ContactInput{ClientID: client.ID, SiteID: site.ID, Name: "Avery Chemist", Email: "avery@example.test", Phone: "555-0100"}, manager)
 	if err != nil {
 		t.Fatalf("create contact: %v", err)
 	}
-	role, err := store.AssignContactRoleForScope(alpha, ContactRoleInput{ContactID: contact.ID, Role: "report_reviewer"}, "manager")
+	role, err := store.AssignContactRoleForScope(alpha, ContactRoleInput{ContactID: contact.ID, Role: "report_reviewer"}, manager)
 	if err != nil {
 		t.Fatalf("assign contact role: %v", err)
 	}
-	project, err := store.CreateProjectForScope(alpha, ProjectInput{ClientID: client.ID, SiteID: site.ID, Name: "Q3 Compliance", WorkOrder: "WO-2026-001", DefaultMatrix: "Water", DefaultTests: []string{"pH"}}, "manager")
+	project, err := store.CreateProjectForScope(alpha, ProjectInput{ClientID: client.ID, SiteID: site.ID, Name: "Q3 Compliance", WorkOrder: "WO-2026-001", DefaultMatrix: "Water", DefaultTests: []string{"pH"}}, manager)
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -66,16 +68,16 @@ func TestMasterDataCreatesClientSitesContactsRolesProjectsDefaultsScopedAndAudit
 		t.Fatalf("beta scope read alpha client defaults")
 	}
 
-	if _, err := store.CreateSiteForScope(beta, SiteInput{ClientID: client.ID, Name: "Cross Tenant Site"}, "mallory"); err == nil {
+	if _, err := store.CreateSiteForScope(beta, SiteInput{ClientID: client.ID, Name: "Cross Tenant Site"}, mallory); err == nil {
 		t.Fatalf("expected cross-tenant site create to fail")
 	}
-	if _, err := store.CreateContactForScope(beta, ContactInput{ClientID: client.ID, SiteID: site.ID, Name: "Cross Tenant Contact"}, "mallory"); err == nil {
+	if _, err := store.CreateContactForScope(beta, ContactInput{ClientID: client.ID, SiteID: site.ID, Name: "Cross Tenant Contact"}, mallory); err == nil {
 		t.Fatalf("expected cross-tenant contact create to fail")
 	}
-	if _, err := store.AssignContactRoleForScope(beta, ContactRoleInput{ContactID: contact.ID, Role: "report_reviewer"}, "mallory"); err == nil {
+	if _, err := store.AssignContactRoleForScope(beta, ContactRoleInput{ContactID: contact.ID, Role: "report_reviewer"}, mallory); err == nil {
 		t.Fatalf("expected cross-tenant role assignment to fail")
 	}
-	if _, err := store.CreateProjectForScope(beta, ProjectInput{ClientID: client.ID, SiteID: site.ID, Name: "Cross Tenant Project"}, "mallory"); err == nil {
+	if _, err := store.CreateProjectForScope(beta, ProjectInput{ClientID: client.ID, SiteID: site.ID, Name: "Cross Tenant Project"}, mallory); err == nil {
 		t.Fatalf("expected cross-tenant project create to fail")
 	}
 
@@ -92,4 +94,16 @@ func TestMasterDataCreatesClientSitesContactsRolesProjectsDefaultsScopedAndAudit
 			t.Fatalf("event %d action = %q, want %q", i, events[i].Action, action)
 		}
 	}
+}
+
+func testScopedActor(userID, tenantID string) ActorContext {
+	return MustActorContext(ActorContextInput{
+		UserID:            userID,
+		DisplayName:       userID,
+		AuthProvider:      "test",
+		TenantMemberships: []TenantMembership{{TenantID: tenantID, Roles: []string{string(RoleAdmin), string(RoleLabManager)}}},
+		Roles:             []string{string(RoleAdmin), string(RoleLabManager)},
+		RequestID:         "req-" + userID,
+		CorrelationID:     "corr-" + userID,
+	})
 }

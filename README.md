@@ -26,6 +26,13 @@ make dev-up
 open http://127.0.0.1:8097
 ```
 
+The Docker workflow derives a clone/worktree-specific Compose project name by default (`project-scientist-<repo-dir>`). `make docker-smoke` uses a separate `<COMPOSE_PROJECT_NAME>-smoke` Compose project, loopback port `18097`, and an in-container temp data directory so the smoke gate does not mutate or delete preserved local development volumes. For concurrent local clones or Kanban workers, override the project and loopback port explicitly:
+
+```bash
+make dev-up COMPOSE_PROJECT_NAME=project-scientist-$USER-1 DEV_PORT=18097
+open http://127.0.0.1:18097
+```
+
 Health check:
 
 ```bash
@@ -42,13 +49,17 @@ make docker-test
 make docker-smoke
 ```
 
-Seed synthetic local-only data through the running dev API:
+`make docker-test` uses an isolated `<COMPOSE_PROJECT_NAME>-test` Compose project and clone-specific default image tags, then cleans the Compose project up on exit. `make docker-smoke` uses an isolated `<COMPOSE_PROJECT_NAME>-smoke` Compose project on loopback port `18097`, verifies the seeded API state against an in-container temp data directory, then stops the smoke container/network. Preserved development volumes are left in place and are not silently deleted.
+
+Seed/reset deterministic synthetic local-only data through the running dev API:
 
 ```bash
-make dev-seed
+make demo-reset
 ```
 
-Stop the local container while preserving the named development data volume:
+This is safe to rerun and recreates the fixture-backed `C-00001` / `S-000001` demo state from `fixtures/mvp_synthetic_lab.json`.
+
+Stop only this checkout's dev/test/smoke Compose projects while preserving named development data volumes:
 
 ```bash
 make dev-down
@@ -60,7 +71,7 @@ Reset the local dev container and named volume when you intentionally want a cle
 make dev-reset
 ```
 
-Full workflow, persistence/reset caveats, CI candidate notes, image review, and stop-lines are documented in [docs/dev.md](docs/dev.md). Local operator commands for audit verification, DB migrate/status, seed/reset, backup/restore, HTTP smoke, and the logs/metrics plan are documented in [docs/operations.md](docs/operations.md). The lab-test MVP acceptance contract and operator demo script live in [docs/mvp-acceptance-contract-demo-script.md](docs/mvp-acceptance-contract-demo-script.md). The MVP critical-path click budget lives in [docs/mvp-critical-path-ux-click-budget.md](docs/mvp-critical-path-ux-click-budget.md).
+Full workflow, persistence/reset caveats, CI candidate notes, image review, and stop-lines are documented in [docs/dev.md](docs/dev.md). Local operator commands for audit verification, DB migrate/status, seed/reset, backup/restore, HTTP smoke, and the logs/metrics plan are documented in [docs/operations.md](docs/operations.md). The lab-test MVP acceptance contract and operator demo script live in [docs/mvp-acceptance-contract-demo-script.md](docs/mvp-acceptance-contract-demo-script.md). The MVP synthetic lab fixture/scenario pack lives in [docs/mvp-synthetic-lab-fixture-pack.md](docs/mvp-synthetic-lab-fixture-pack.md) with machine-readable definitions in [fixtures/mvp_synthetic_lab.json](fixtures/mvp_synthetic_lab.json). The MVP critical-path click budget lives in [docs/mvp-critical-path-ux-click-budget.md](docs/mvp-critical-path-ux-click-budget.md).
 
 ## Implemented in bootstrap
 

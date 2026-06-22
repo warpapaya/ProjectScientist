@@ -12,7 +12,7 @@ import (
 	"github.com/warpapaya/ProjectScientist/internal/lab"
 )
 
-func TestScopedFormMutationsRedirectBackToSameTenantLab(t *testing.T) {
+func TestCreateClientIgnoresSpoofedActorHeaderAndFormForAuditIdentity(t *testing.T) {
 	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -20,97 +20,183 @@ func TestScopedFormMutationsRedirectBackToSameTenantLab(t *testing.T) {
 	defer store.Close()
 	app := &app{store: store}
 
-	form := url.Values{
-		"tenant_id": {"tenant-alpha"},
-		"lab_id":    {"water-lab"},
-		"name":      {"Alpha Client"},
-		"email":     {"alpha@example.test"},
-	}
+	form := url.Values{}
+	form.Set("name", "Spoof Test Lab")
+	form.Set("email", "spoof@example.test")
+	form.Set("actor", "form-attacker")
 	req := httptest.NewRequest(http.MethodPost, "/api/clients", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	res := httptest.NewRecorder()
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-PSC-Actor", "header-attacker")
+	req.Header.Set("X-PSC-Request-ID", "req-spoof")
+	rr := httptest.NewRecorder()
 
-	app.createClient(res, req)
-
-	if res.Code != http.StatusSeeOther {
-		t.Fatalf("redirect status = %d, want %d", res.Code, http.StatusSeeOther)
+	app.createClient(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rr.Code, rr.Body.String())
 	}
-	location := res.Header().Get("Location")
-	redirectReq := httptest.NewRequest(http.MethodGet, location, nil)
-	got := scopeFromRequest(redirectReq)
-	if got.TenantID != "tenant-alpha" || got.LabID != "water-lab" {
-		t.Fatalf("redirected request scope = %#v", got)
+	events, err := store.AuditEvents(0)
+	if err != nil {
+		t.Fatalf("audit events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected one audit event, got %d", len(events))
+	}
+	if events[0].Actor == "header-attacker" || events[0].Actor == "form-attacker" {
+		t.Fatalf("spoofed actor set audit identity: %#v", events[0])
+	}
+	if events[0].Actor != "lab-dev" {
+		t.Fatalf("expected local authenticated dev identity lab-dev, got %q", events[0].Actor)
+	}
+	if events[0].ActorContext.UserID != "lab-dev" || events[0].ActorContext.RequestID != "req-spoof" {
+		t.Fatalf("expected dev actor context with request id, got %#v", events[0].ActorContext)
 	}
 }
 
-func TestAPIStateAndMutationsAreTenantLabScoped(t *testing.T) {
+func TestCreateSampleIgnoresSpoofedActorHeaderAndFormForAuditIdentity(t *testing.T) {
 	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
 	app := &app{store: store}
-
-	clientResp := performForm(t, app.createClient, "/api/clients", url.Values{"name": {"Alpha Client"}, "email": {"alpha@example.test"}}, "tenant-alpha", "water-lab")
-	if clientResp.Code != http.StatusCreated {
-		t.Fatalf("create alpha client status = %d body=%s", clientResp.Code, clientResp.Body.String())
-	}
-	var client lab.Client
-	if err := json.Unmarshal(clientResp.Body.Bytes(), &client); err != nil {
-		t.Fatalf("decode client: %v", err)
-	}
-	if client.TenantID != "tenant-alpha" || client.LabID != "water-lab" {
-		t.Fatalf("client response missing scope: %#v", client)
+	client, err := store.CreateClient("Seed Lab", "seed@example.test", actor(httptest.NewRequest(http.MethodGet, "/", nil)))
+	if err != nil {
+		t.Fatalf("seed client: %v", err)
 	}
 
-	crossResp := performForm(t, app.createSample, "/api/samples", url.Values{"client_id": {client.ID}, "project": {"Cross Tenant"}, "matrix": {"Water"}, "tests": {"pH"}}, "tenant-beta", "water-lab")
-	if crossResp.Code != http.StatusBadRequest {
-		t.Fatalf("cross-tenant sample status = %d, want %d", crossResp.Code, http.StatusBadRequest)
-	}
-
-	sampleResp := performForm(t, app.createSample, "/api/samples", url.Values{"client_id": {client.ID}, "project": {"Alpha Project"}, "matrix": {"Water"}, "tests": {"pH"}}, "tenant-alpha", "water-lab")
-	if sampleResp.Code != http.StatusCreated {
-		t.Fatalf("create alpha sample status = %d body=%s", sampleResp.Code, sampleResp.Body.String())
-	}
-
-	betaState := performGet(t, app.apiState, "/api/state", "tenant-beta", "water-lab")
-	var beta pageData
-	if err := json.Unmarshal(betaState.Body.Bytes(), &beta); err != nil {
-		t.Fatalf("decode beta state: %v", err)
-	}
-	if len(beta.Clients) != 0 || len(beta.Samples) != 0 || len(beta.Audit) != 0 {
-		t.Fatalf("beta state leaked alpha data: %#v", beta)
-	}
-
-	alphaState := performGet(t, app.apiState, "/api/state", "tenant-alpha", "water-lab")
-	var alpha pageData
-	if err := json.Unmarshal(alphaState.Body.Bytes(), &alpha); err != nil {
-		t.Fatalf("decode alpha state: %v", err)
-	}
-	if len(alpha.Clients) != 1 || len(alpha.Samples) != 1 || len(alpha.Audit) != 2 {
-		t.Fatalf("alpha state missing scoped data: %#v", alpha)
-	}
-}
-
-func performForm(t *testing.T, handler http.HandlerFunc, path string, form url.Values, tenantID, labID string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	form := url.Values{}
+	form.Set("client_id", client.ID)
+	form.Set("project", "Spoofed Sample")
+	form.Set("matrix", "Water")
+	form.Set("tests", "pH,Turbidity")
+	form.Set("actor", "form-attacker")
+	req := httptest.NewRequest(http.MethodPost, "/api/samples", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-PSC-Tenant-ID", tenantID)
-	req.Header.Set("X-PSC-Lab-ID", labID)
-	res := httptest.NewRecorder()
-	handler(res, req)
-	return res
+	req.Header.Set("X-PSC-Actor", "header-attacker")
+	req.Header.Set("X-PSC-Request-ID", "req-sample-spoof")
+	rr := httptest.NewRecorder()
+
+	app.createSample(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	assertLatestAuditIdentity(t, store, "sample.created", "req-sample-spoof")
 }
 
-func performGet(t *testing.T, handler http.HandlerFunc, path, tenantID, labID string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, path, nil)
+func TestTransitionSampleIgnoresSpoofedActorHeaderAndFormForAuditIdentity(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app := &app{store: store}
+	seedReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	seedActor := actor(seedReq)
+	client, err := store.CreateClient("Seed Lab", "seed@example.test", seedActor)
+	if err != nil {
+		t.Fatalf("seed client: %v", err)
+	}
+	sample, err := store.CreateSample(lab.CreateSampleInput{ClientID: client.ID, Project: "Metals", Matrix: "Soil", Tests: []string{"Lead"}}, seedActor)
+	if err != nil {
+		t.Fatalf("seed sample: %v", err)
+	}
+
+	form := url.Values{}
+	form.Set("status", string(lab.StatusInPrep))
+	form.Set("actor", "form-attacker")
+	req := httptest.NewRequest(http.MethodPost, "/api/samples/"+sample.ID+"/transition", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-PSC-Tenant-ID", tenantID)
-	req.Header.Set("X-PSC-Lab-ID", labID)
-	res := httptest.NewRecorder()
-	handler(res, req)
-	return res
+	req.Header.Set("X-PSC-Actor", "header-attacker")
+	req.Header.Set("X-PSC-Request-ID", "req-transition-spoof")
+	rr := httptest.NewRecorder()
+
+	app.transitionSample(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	assertLatestAuditIdentity(t, store, "sample.transitioned", "req-transition-spoof")
+}
+
+func TestDemoResetEndpointSeedsFixtureAndIsRerunnable(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app := &app{store: store, demoResetEnabled: true, fixturePath: filepath.Join("..", "..", "fixtures", "mvp_synthetic_lab.json")}
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/demo/reset", nil)
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("X-PSC-Request-ID", "demo-reset-test")
+		rr := httptest.NewRecorder()
+
+		app.demoReset(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("run %d expected 200, got %d body=%s", i+1, rr.Code, rr.Body.String())
+		}
+		var summary lab.SyntheticDemoSeedSummary
+		if err := json.NewDecoder(rr.Body).Decode(&summary); err != nil {
+			t.Fatalf("decode summary: %v", err)
+		}
+		if summary.ClientID != "C-00001" || summary.SampleID != "S-000001" || summary.ClientName != "Okefenokee Synthetic Water Authority" || summary.AnalysisCount != 4 {
+			t.Fatalf("unexpected summary after run %d: %#v", i+1, summary)
+		}
+	}
+	if got := len(store.Clients()); got != 1 {
+		t.Fatalf("expected rerun to leave one client, got %d", got)
+	}
+	if got := len(store.Samples()); got != 1 {
+		t.Fatalf("expected rerun to leave one sample, got %d", got)
+	}
+	events, err := store.AuditEvents(0)
+	if err != nil {
+		t.Fatalf("audit events: %v", err)
+	}
+	if len(events) == 0 || events[len(events)-1].ActorContext.UserID != "local-demo-reset-admin" {
+		t.Fatalf("expected demo reset to use local admin actor, got %#v", events)
+	}
+}
+
+func TestDemoResetEndpointIsDisabledUnlessExplicitlyEnabled(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app := &app{store: store, fixturePath: filepath.Join("..", "..", "fixtures", "mvp_synthetic_lab.json")}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/demo/reset", nil)
+	rr := httptest.NewRecorder()
+	app.demoReset(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected disabled endpoint to 404, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func assertLatestAuditIdentity(t *testing.T, store *lab.Store, action, requestID string) {
+	t.Helper()
+	events, err := store.AuditEvents(0)
+	if err != nil {
+		t.Fatalf("audit events: %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatalf("expected audit events")
+	}
+	event := events[len(events)-1]
+	if event.Action != action {
+		t.Fatalf("expected latest action %q, got %q", action, event.Action)
+	}
+	if event.Actor == "header-attacker" || event.Actor == "form-attacker" {
+		t.Fatalf("spoofed actor set audit identity: %#v", event)
+	}
+	if event.Actor != "lab-dev" {
+		t.Fatalf("expected local authenticated dev identity lab-dev, got %q", event.Actor)
+	}
+	if event.ActorContext.UserID != "lab-dev" || event.ActorContext.RequestID != requestID {
+		t.Fatalf("expected dev actor context with request id %q, got %#v", requestID, event.ActorContext)
+	}
 }

@@ -22,16 +22,16 @@ The current implementation provides:
 - Client creation, sample intake, analysis list attachment, and simple sample workflow.
 - Server-side transition edge enforcement for `received -> in_prep -> in_analysis -> in_review -> released`.
 - SQLite-backed persistence with domain state and audit writes committed in one transaction.
-- Audit event fields: sequence, timestamp, actor string, action, entity type/id, details, previous hash, hash.
-- Startup audit verification that refuses writes when the local hash chain is damaged.
-- Basic tests for sample creation audit, allowed workflow path, illegal direct release, and hash chaining.
+- Audit event fields: event id, tenant/lab id, timestamp, authenticated actor context snapshot, resource, action, outcome/reason, correlation id, sequence, details, previous hash, and hash.
+- Startup audit verification that refuses writes when the local hash chain or checkpoint tail is damaged.
+- Basic tests for sample creation audit, allowed workflow path, illegal direct release denial auditing, actor-context spoofing controls, tenant/lab scoping, and hash chaining.
 
 Known bootstrap limitations:
 
-- Actor is caller-supplied (`X-PSC-Actor`, form `actor`, or `lab-dev`) and is not authenticated.
-- No RBAC/ABAC enforcement exists.
-- No tenant/lab boundary exists.
-- Audit denial events are not emitted for rejected protected operations.
+- Local HTTP uses a fixed authenticated dev actor (`lab-dev`) and ignores spoofable `X-PSC-Actor`/form `actor`; real login/session middleware is not implemented yet.
+- No RBAC/ABAC enforcement exists beyond tenant/lab boundary checks.
+- Tenant/lab boundary exists for current client/sample/audit paths, but is not yet applied across future result/report/import domains.
+- Audit denial events are emitted for protected sample transition denials; other future protected operations still need denial events as they are added.
 - External checkpointing is not implemented, so a writer with filesystem access can still regenerate the local chain.
 - Remaining advanced crash/recovery modes beyond SQLite transaction rollback still need explicit backup/restore and operator recovery tests.
 - Release workflow lacks lab-grade preconditions, immutable report/result artifacts, e-signature, and amendment/supersession model.
@@ -107,6 +107,8 @@ Acceptance tests:
 - Denied events are audited with outcome and reason/error code.
 - Authorization is enforced server-side and cannot be bypassed through UI-only restrictions.
 
+Lab-test implementation note (PSC-RM-005): the committed server-side policy layer defines protected operations for client/contact/project, sample, result, report, audit, import/export, and admin/security configuration. Store mutations call the policy before writing state. Denied authorization attempts commit safe audit events with `outcome=denied` and `reason=authorization_denied` without full request payloads.
+
 ### 4. Tenant/lab boundary gate
 
 Current bootstrap behavior: clients exist but there is no tenant/lab boundary.
@@ -157,6 +159,21 @@ Acceptance tests:
 
 - Verifier fails on modified event body, deleted event, reordered event, duplicate sequence, gap, truncated tail, malformed JSON, hash mismatch, and checkpoint mismatch.
 - Checkpoint creation and verification are deterministic and documented.
+
+Implemented v1 lab-test behavior:
+
+- Audit events are written to SQLite with schema v1 fields: `event_id`, `tenant_id`, `lab_id`, actor context JSON, resource JSON, stable action, `outcome`, denied/failed `reason`, `correlation_id`, monotonic `sequence`, canonical `previous_hash`, and event `hash`.
+- Canonical hash input is the JSON serialization of every schema field except `hash`, with timestamps normalized through RFC3339Nano UTC formatting. `details` is restricted by convention to minimal non-secret metadata.
+- Every append updates the local `audit_checkpoints.latest` row with the tail sequence and hash in the same transaction as the domain mutation/audit insert. This is only a deterministic local checkpoint for lab-test tamper detection; production-candidate work still requires a signed or externally anchored checkpoint outside the mutable primary SQLite store.
+- Startup opens fail closed: `OpenSQLiteStore` runs the verifier before serving writes and returns `audit verification failed` on damaged streams. The verifier checks schema validity, duplicate/gap sequence, previous-hash linkage, event hash recomputation, malformed JSON/timestamps, and checkpoint tail mismatch. `OpenSQLiteStoreWithoutVerification` exists for controlled tests/operator recovery only and must not be used by the serving app.
+- Protected sample transition denials emit `sample.transition.requested` with `outcome=denied` and a safe reason code before returning the denial; no full request payload is recorded.
+
+Checkpoint plan for the next gate:
+
+1. Keep the local checkpoint as the fast startup guard.
+2. Add periodic signed checkpoints containing tenant/lab id, sequence, tail hash, creation time, signer key id, and signature.
+3. Anchor signed checkpoint records outside the writable primary store (object storage/WORM bucket, append-only log, or ops-controlled Git/secret-backed ledger).
+4. Startup verification should compare the SQLite tail against the newest trusted external checkpoint and block writes on mismatch, missing checkpoint, or signer/key policy failure.
 
 ### 7. State/audit transaction gate
 

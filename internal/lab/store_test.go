@@ -13,7 +13,7 @@ func TestCreateSampleAssignsIDWorkflowAndAuditEvent(t *testing.T) {
 	}
 	defer store.Close()
 
-	client, err := store.CreateClient("Clearline Demo Lab", "qa@example.test", "friday")
+	client, err := store.CreateClient("Clearline Demo Lab", "qa@example.test", testActor("friday"))
 	if err != nil {
 		t.Fatalf("create client: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestCreateSampleAssignsIDWorkflowAndAuditEvent(t *testing.T) {
 		Project:  "Drinking Water Compliance",
 		Matrix:   "Water",
 		Tests:    []string{"pH", "Turbidity"},
-	}, "friday")
+	}, testActor("friday"))
 	if err != nil {
 		t.Fatalf("create sample: %v", err)
 	}
@@ -55,14 +55,14 @@ func TestWorkflowTransitionRequiresAllowedPathAndAudits(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	client, _ := store.CreateClient("CENLA Demo", "cenla@example.test", "ashley")
-	sample, _ := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "Metals", Matrix: "Soil", Tests: []string{"Lead"}}, "ashley")
+	client, _ := store.CreateClient("CENLA Demo", "cenla@example.test", testActor("ashley"))
+	sample, _ := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "Metals", Matrix: "Soil", Tests: []string{"Lead"}}, testActor("ashley"))
 
-	if err := store.TransitionSample(sample.ID, StatusReleased, "ashley"); err == nil {
+	if err := store.TransitionSample(sample.ID, StatusReleased, testActor("ashley")); err == nil {
 		t.Fatalf("expected direct received -> released transition to fail")
 	}
 	for _, status := range []SampleStatus{StatusInPrep, StatusInAnalysis, StatusInReview, StatusReleased} {
-		if err := store.TransitionSample(sample.ID, status, "ashley"); err != nil {
+		if err := store.TransitionSample(sample.ID, status, testActor("ashley")); err != nil {
 			t.Fatalf("transition to %s: %v", status, err)
 		}
 	}
@@ -92,8 +92,8 @@ func TestAuditLogIsHashChained(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	_, _ = store.CreateClient("Tindall Demo", "armando@example.test", "armando")
-	_, _ = store.CreateClient("RJ Lee Demo", "demo@example.test", "friday")
+	_, _ = store.CreateClient("Tindall Demo", "armando@example.test", testActor("armando"))
+	_, _ = store.CreateClient("RJ Lee Demo", "demo@example.test", testActor("friday"))
 
 	events, err := store.AuditEvents(0)
 	if err != nil {
@@ -122,7 +122,7 @@ func TestTenantLabBoundaryScopesReadsWritesAndAudit(t *testing.T) {
 	alpha := Scope{TenantID: "tenant-alpha", LabID: "water-lab"}
 	beta := Scope{TenantID: "tenant-beta", LabID: "water-lab"}
 
-	client, err := store.CreateClientForScope(alpha, "Alpha Client", "alpha@example.test", "friday")
+	client, err := store.CreateClientForScope(alpha, "Alpha Client", "alpha@example.test", testScopedActor("friday", alpha.TenantID))
 	if err != nil {
 		t.Fatalf("create alpha client: %v", err)
 	}
@@ -130,11 +130,11 @@ func TestTenantLabBoundaryScopesReadsWritesAndAudit(t *testing.T) {
 		t.Fatalf("client missing tenant/lab scope: %#v", client)
 	}
 
-	if _, err := store.CreateSampleForScope(beta, CreateSampleInput{ClientID: client.ID, Project: "Cross write", Matrix: "Water", Tests: []string{"pH"}}, "mallory"); err == nil {
+	if _, err := store.CreateSampleForScope(beta, CreateSampleInput{ClientID: client.ID, Project: "Cross write", Matrix: "Water", Tests: []string{"pH"}}, testScopedActor("mallory", beta.TenantID)); err == nil {
 		t.Fatalf("expected cross-tenant sample write to fail closed")
 	}
 
-	sample, err := store.CreateSampleForScope(alpha, CreateSampleInput{ClientID: client.ID, Project: "Alpha Project", Matrix: "Water", Tests: []string{"pH"}}, "friday")
+	sample, err := store.CreateSampleForScope(alpha, CreateSampleInput{ClientID: client.ID, Project: "Alpha Project", Matrix: "Water", Tests: []string{"pH"}}, testScopedActor("friday", alpha.TenantID))
 	if err != nil {
 		t.Fatalf("create alpha sample: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestTenantLabBoundaryScopesReadsWritesAndAudit(t *testing.T) {
 	if _, ok := store.GetSampleForScope(beta, sample.ID); ok {
 		t.Fatalf("cross-tenant sample read should fail closed")
 	}
-	if err := store.TransitionSampleForScope(beta, sample.ID, StatusInPrep, "mallory"); err == nil {
+	if err := store.TransitionSampleForScope(beta, sample.ID, StatusInPrep, testScopedActor("mallory", beta.TenantID)); err == nil {
 		t.Fatalf("cross-tenant transition should fail closed")
 	}
 	if got := store.SamplesForScope(beta); len(got) != 0 {
@@ -173,7 +173,7 @@ func TestTenantLabBoundaryScopesReadsWritesAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("beta audit events: %v", err)
 	}
-	if len(betaEvents) != 0 {
-		t.Fatalf("beta audit should not include alpha events: %#v", betaEvents)
+	if len(betaEvents) != 1 || betaEvents[0].Outcome != AuditOutcomeDenied || betaEvents[0].Reason != "scope_mismatch" {
+		t.Fatalf("beta audit should only include denied cross-scope transition proof: %#v", betaEvents)
 	}
 }

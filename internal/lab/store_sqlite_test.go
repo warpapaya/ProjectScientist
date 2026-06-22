@@ -75,7 +75,7 @@ func TestSQLiteMigrationAddsMissingAuditColumnsBeforeVerification(t *testing.T) 
 	}
 	defer store.Close()
 
-	client, err := store.CreateClient("Migrated Audit Lab", "audit@example.test", "operator")
+	client, err := store.CreateClient("Migrated Audit Lab", "audit@example.test", testActor("operator"))
 	if err != nil {
 		t.Fatalf("create client after migration: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestSQLiteStoreCommitsDomainStateAndAuditAtomically(t *testing.T) {
 		t.Fatalf("install audit failure trigger: %v", err)
 	}
 
-	_, err = store.CreateClient("Atomic Lab", "atomic@example.test", "friday")
+	_, err = store.CreateClient("Atomic Lab", "atomic@example.test", testActor("friday"))
 	if err == nil || !strings.Contains(err.Error(), "audit unavailable") {
 		t.Fatalf("expected audit failure, got %v", err)
 	}
@@ -120,11 +120,11 @@ func TestSQLiteStorePersistsDomainStateAndHashChainedAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
-	client, err := store.CreateClient("Clearline Demo Lab", "qa@example.test", "friday")
+	client, err := store.CreateClient("Clearline Demo Lab", "qa@example.test", testActor("friday"))
 	if err != nil {
 		t.Fatalf("create client: %v", err)
 	}
-	sample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "Drinking Water Compliance", Matrix: "Water", Tests: []string{"pH", "Turbidity"}}, "friday")
+	sample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "Drinking Water Compliance", Matrix: "Water", Tests: []string{"pH", "Turbidity"}}, testActor("friday"))
 	if err != nil {
 		t.Fatalf("create sample: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestSQLiteStoreRefusesStartupWhenAuditHashChainIsDamaged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
-	_, err = store.CreateClient("Tamper Lab", "tamper@example.test", "aegis")
+	_, err = store.CreateClient("Tamper Lab", "tamper@example.test", testActor("aegis"))
 	if err != nil {
 		t.Fatalf("create client: %v", err)
 	}

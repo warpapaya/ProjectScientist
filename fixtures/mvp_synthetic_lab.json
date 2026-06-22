@@ -1,0 +1,220 @@
+{
+  "fixture_id": "psc-mvp-synthetic-lab-v1",
+  "version": "2026-06-22",
+  "boundary": "Lab-test only synthetic scenario pack; not production-ready, customer-ready, migration-ready, or approved for customer data.",
+  "synthetic_only": true,
+  "tenant": {
+    "id": "tenant-clearline-demo-lab",
+    "name": "Clearline Demo Lab"
+  },
+  "control_tenant": {
+    "id": "tenant-clearline-demo-lab-b",
+    "name": "Clearline Demo Lab B"
+  },
+  "client": {
+    "id": "client-okefenokee-synthetic-water-authority",
+    "name": "Okefenokee Synthetic Water Authority",
+    "contact": {
+      "id": "contact-jordan-demo",
+      "name": "Jordan Demo",
+      "email": "jordan.demo@example.test",
+      "role": "report_recipient"
+    }
+  },
+  "project": {
+    "id": "project-mvp-drinking-water-compliance-demo",
+    "name": "MVP Drinking Water Compliance Demo"
+  },
+  "sample": {
+    "client_sample_id": "OK-SYN-2026-0001",
+    "collection_point": "Synthetic Well Entry Point 01",
+    "matrix": {
+      "id": "matrix-drinking-water",
+      "name": "Drinking Water"
+    },
+    "container": {
+      "id": "container-250ml-hdpe",
+      "name": "250 mL HDPE"
+    },
+    "preservation": {
+      "id": "preservation-nitric-acid",
+      "name": "Nitric acid preserved"
+    },
+    "receipt_condition": "received intact at controlled temperature",
+    "custody_expectation": "initial receipt custody event with receiving-tech actor and generated lab accession identifier"
+  },
+  "analysis_profile": {
+    "id": "profile-mvp-metals-field-checks",
+    "name": "MVP Metals + Field Checks",
+    "analytes": [
+      {
+        "id": "analyte-ph",
+        "name": "pH",
+        "method": "Synthetic Field Method SM4500-H+B",
+        "unit": "pH units"
+      },
+      {
+        "id": "analyte-turbidity",
+        "name": "Turbidity",
+        "method": "Synthetic Field Method EPA 180.1",
+        "unit": "NTU"
+      },
+      {
+        "id": "analyte-lead",
+        "name": "Lead",
+        "method": "Synthetic Metals Method EPA 200.8",
+        "unit": "ug/L"
+      },
+      {
+        "id": "analyte-copper",
+        "name": "Copper",
+        "method": "Synthetic Metals Method EPA 200.8",
+        "unit": "ug/L"
+      }
+    ]
+  },
+  "limits": [
+    {
+      "analyte_id": "analyte-ph",
+      "reporting_limit": 0.1,
+      "unit": "pH units",
+      "acceptance": "6.5-8.5 advisory range"
+    },
+    {
+      "analyte_id": "analyte-turbidity",
+      "reporting_limit": 0.1,
+      "unit": "NTU",
+      "acceptance": "report if greater than 1.0 NTU"
+    },
+    {
+      "analyte_id": "analyte-lead",
+      "reporting_limit": 1.0,
+      "unit": "ug/L",
+      "acceptance": "report qualifier if greater than 15 ug/L"
+    },
+    {
+      "analyte_id": "analyte-copper",
+      "reporting_limit": 5.0,
+      "unit": "ug/L",
+      "acceptance": "report qualifier if greater than 1300 ug/L"
+    }
+  ],
+  "qualifiers": [
+    {
+      "code": "ND",
+      "meaning": "Not detected at or above reporting limit"
+    },
+    {
+      "code": "J",
+      "meaning": "Estimated value between detection and reporting limits"
+    },
+    {
+      "code": "Q",
+      "meaning": "QC review flag requires reviewer acknowledgement"
+    }
+  ],
+  "qc": {
+    "review_rule": "All four analyte results require analyst entry, reviewer lock, and report-release precondition check before COA release.",
+    "required_qc_checks": [
+      "method blank associated with metals batch is ND for Lead and Copper",
+      "laboratory control sample recovery is within synthetic 80-120 percent window",
+      "field-check duplicate RPD is reviewed when pH or Turbidity differs beyond configured warning threshold"
+    ],
+    "negative_controls": [
+      "release denied before reviewer lock",
+      "released result mutation denied and audited",
+      "unauthorized actor cannot enter or release results"
+    ]
+  },
+  "report": {
+    "template_id": "report-template-mvp-synthetic-coa-v1",
+    "title": "MVP Synthetic COA v1",
+    "format": "html-or-pdf",
+    "paper": "US Letter",
+    "orientation": "portrait",
+    "fields": [
+      "tenant lab name",
+      "client name",
+      "contact email",
+      "project/work order",
+      "lab accession id",
+      "client sample id",
+      "matrix/container/preservation",
+      "analyte/result/unit/qualifier/reporting limit",
+      "analyst/reviewer/releaser actors",
+      "template version",
+      "artifact generated timestamp",
+      "artifact content hash"
+    ]
+  },
+  "actors": {
+    "lab-manager": "Seeds tenant, catalog, profile, limits, report settings, and QC expectations.",
+    "receiving-tech": "Receives/accessions synthetic sample and generates label artifact.",
+    "analyst": "Assigns worksheet and enters results for all analytes.",
+    "reviewer": "Reviews QC expectations, locks result set, and records review decision.",
+    "report-releaser": "Generates/releases COA after review and artifact checks pass.",
+    "unauthorized-actor": "Used only for denied-operation negative controls."
+  },
+  "scenarios": [
+    {
+      "id": "seed-reset",
+      "purpose": "Deterministic seed/reset proof for one synthetic tenant plus one control tenant.",
+      "steps": [
+        "reset local lab-test data store",
+        "load tenant and control tenant",
+        "load client/contact/project/catalog/profile/limits/qualifiers/report settings exactly once",
+        "export state and verify stable fixture ids"
+      ]
+    },
+    {
+      "id": "happy-path",
+      "purpose": "One sample lifecycle from receipt through released synthetic COA.",
+      "steps": [
+        "receiving-tech receives OK-SYN-2026-0001 with configured matrix/container/preservation",
+        "system generates lab accession id and label artifact",
+        "profile expands to pH, Turbidity, Lead, and Copper analysis request lines",
+        "analyst assigns worksheet and enters all results with unit/qualifier/limit snapshots",
+        "reviewer confirms QC expectations and locks result set",
+        "report-releaser generates and releases MVP Synthetic COA v1 with immutable content hash",
+        "audit verifier confirms required event order and hash chain"
+      ]
+    },
+    {
+      "id": "denied-controls",
+      "purpose": "Negative controls required by MVP scope.",
+      "steps": [
+        "deny and audit cross-tenant read/write from Clearline Demo Lab B",
+        "deny and audit unauthorized-actor protected mutation",
+        "deny and audit illegal sample/result/report workflow jump",
+        "deny and audit report release before review/QC/report preconditions",
+        "deny and audit mutation of released result or report artifact"
+      ]
+    },
+    {
+      "id": "audit-verification",
+      "purpose": "Audit and provenance proof for e2e tests.",
+      "steps": [
+        "verify hash chain continuity",
+        "verify seed/config, sample intake, label generation, worksheet assignment, result entry, review, COA generation, and release events",
+        "verify denied-operation audit events carry actor, tenant, entity, and outcome without storing full sensitive payloads",
+        "verify released artifact hash matches report metadata"
+      ]
+    }
+  ],
+  "senaite_mapping": {
+    "tenant": "Lab/portal boundary concept used to scope clients, catalog, samples, and audit events.",
+    "client": "Maps to SENAITE Client organization/account concept.",
+    "contact": "Maps to SENAITE client contact/report recipient role without using real person data.",
+    "project": "Maps to Project/Work Order grouping used during sample intake and reporting.",
+    "matrix": "Maps to SampleType/sample matrix vocabulary.",
+    "container": "Maps to container catalog item for received sample material.",
+    "preservation": "Maps to preservative/preservation requirement associated with container and method profile.",
+    "analysis_profile": "Maps to AnalysisProfile/order template expanded at request time.",
+    "analysis_service": "Maps to AnalysisService/analyte line with method, unit, and reporting metadata snapshot.",
+    "method": "Maps to Method/SOP reference captured as a versioned snapshot for reporting.",
+    "specification_limit": "Maps to client/matrix/analyte reporting or acceptance limits.",
+    "result_qualifier": "Maps to controlled result qualifier vocabulary for ND/J/Q style reporting.",
+    "qc_review": "Maps to minimal QC batch/review expectations; not a full SENAITE QC migration model.",
+    "report_template": "Maps to report template/default metadata needed by a COA renderer and artifact store."
+  }
+}
