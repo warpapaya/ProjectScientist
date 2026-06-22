@@ -117,6 +117,7 @@ func serve() error {
 	mux.HandleFunc("POST /api/sample-intake-templates", application.createSampleIntakeTemplate)
 	mux.HandleFunc("POST /api/sample-intake-templates/", application.createSamplesFromTemplate)
 	mux.HandleFunc("POST /api/samples", application.createSample)
+	mux.HandleFunc("GET /api/samples/", application.sampleLabelArtifact)
 	mux.HandleFunc("POST /api/samples/", application.sampleAction)
 	mux.HandleFunc("POST /api/catalog/departments", application.createCatalogDepartment)
 	mux.HandleFunc("POST /api/catalog/units", application.createCatalogUnit)
@@ -648,6 +649,24 @@ func (a *app) sampleAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.NotFound(w, r)
+}
+
+func (a *app) sampleLabelArtifact(w http.ResponseWriter, r *http.Request) {
+	sampleID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/samples/"), "/label-artifact")
+	if sampleID == "" || strings.Contains(sampleID, "/") || !strings.HasSuffix(r.URL.Path, "/label-artifact") {
+		http.NotFound(w, r)
+		return
+	}
+	artifact, err := a.store.GenerateSampleLabelArtifactForScope(scopeFromRequest(r), sampleID, actor(r))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, lab.ErrAuthorizationDenied) {
+			status = http.StatusForbidden
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	writeJSON(w, artifact, http.StatusOK)
 }
 
 func (a *app) transitionSample(w http.ResponseWriter, r *http.Request) {
