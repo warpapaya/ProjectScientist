@@ -114,6 +114,7 @@ Needed:
 Needed:
 - Dashboard: attention queue, intake, worksheet queue, review/release queue, audit exceptions.
 - Low-click flows for intake, worksheet result entry, review/release, COA/package generation.
+- Critical-path click budget for the lab-test MVP in `docs/mvp-critical-path-ux-click-budget.md`.
 - Keyboard shortcuts and command palette.
 - Customer-safe views and client portal concepts later.
 - Accessibility and responsive layout, but desktop lab workstation first.

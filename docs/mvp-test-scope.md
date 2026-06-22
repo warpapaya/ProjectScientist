@@ -87,7 +87,7 @@ The broad roadmap remains the source of truth for parity. The MVP track adds exp
 
 - MVP-001: MVP acceptance contract and demo script (`docs/mvp-acceptance-contract-demo-script.md`).
 - MVP-002: Synthetic lab fixture/scenario pack.
-- MVP-003: Critical-path UX click-budget spec.
+- MVP-003: Critical-path UX click-budget spec (`docs/mvp-critical-path-ux-click-budget.md`).
 - MVP-004: Local demo seed/reset command.
 - MVP-005: End-to-end vertical-slice integration.
 - MVP-006: Result-entry/report-release demo UX polish.

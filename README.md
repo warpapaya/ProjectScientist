@@ -58,7 +58,7 @@ Reset the local dev container and named volume when you intentionally want a cle
 make dev-reset
 ```
 
-Full workflow, persistence/reset caveats, CI candidate notes, image review, and stop-lines are documented in [docs/dev.md](docs/dev.md). The lab-test MVP acceptance contract and operator demo script live in [docs/mvp-acceptance-contract-demo-script.md](docs/mvp-acceptance-contract-demo-script.md).
+Full workflow, persistence/reset caveats, CI candidate notes, image review, and stop-lines are documented in [docs/dev.md](docs/dev.md). The lab-test MVP acceptance contract and operator demo script live in [docs/mvp-acceptance-contract-demo-script.md](docs/mvp-acceptance-contract-demo-script.md). The MVP critical-path click budget lives in [docs/mvp-critical-path-ux-click-budget.md](docs/mvp-critical-path-ux-click-budget.md).
 
 ## Implemented in bootstrap
 
