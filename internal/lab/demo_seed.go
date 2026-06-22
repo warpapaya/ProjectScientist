@@ -10,13 +10,14 @@ import (
 )
 
 type SyntheticDemoSeedSummary struct {
-	FixtureID     string `json:"fixture_id"`
-	ClientID      string `json:"client_id"`
-	ClientName    string `json:"client_name"`
-	SampleID      string `json:"sample_id"`
-	Project       string `json:"project"`
-	Matrix        string `json:"matrix"`
-	AnalysisCount int    `json:"analysis_count"`
+	FixtureID            string `json:"fixture_id"`
+	ClientID             string `json:"client_id"`
+	ClientName           string `json:"client_name"`
+	SampleID             string `json:"sample_id"`
+	Project              string `json:"project"`
+	Matrix               string `json:"matrix"`
+	AnalysisCount        int    `json:"analysis_count"`
+	SampleReferenceCount int    `json:"sample_reference_count"`
 }
 
 type syntheticDemoFixture struct {
@@ -70,7 +71,11 @@ func (s *Store) ResetAndSeedSyntheticDemo(fixturePath string, actor ActorContext
 	if err != nil {
 		return SyntheticDemoSeedSummary{}, fmt.Errorf("seed demo sample: %w", err)
 	}
-	return SyntheticDemoSeedSummary{FixtureID: fixture.FixtureID, ClientID: client.ID, ClientName: client.Name, SampleID: sample.ID, Project: sample.Project, Matrix: sample.Matrix, AnalysisCount: len(sample.Analyses)}, nil
+	referenceSummary, err := s.SeedDemoSampleReferenceData(actor)
+	if err != nil {
+		return SyntheticDemoSeedSummary{}, fmt.Errorf("seed demo sample reference data: %w", err)
+	}
+	return SyntheticDemoSeedSummary{FixtureID: fixture.FixtureID, ClientID: client.ID, ClientName: client.Name, SampleID: sample.ID, Project: sample.Project, Matrix: sample.Matrix, AnalysisCount: len(sample.Analyses), SampleReferenceCount: referenceSummary.TotalCount}, nil
 }
 
 func loadSyntheticDemoFixture(path string) (syntheticDemoFixture, error) {
@@ -106,7 +111,8 @@ func (s *Store) resetLocalDemoStore() error {
 			`DELETE FROM audit_events`,
 			`DELETE FROM samples`,
 			`DELETE FROM clients`,
-			`UPDATE store_meta SET value = '1' WHERE key IN ('next_client', 'next_sample', 'next_audit')`,
+			`DELETE FROM sample_reference_items`,
+			`UPDATE store_meta SET value = '1' WHERE key IN ('next_client', 'next_sample', 'next_audit', 'next_sample_reference')`,
 			`UPDATE store_meta SET value = '' WHERE key = 'last_hash'`,
 		} {
 			if _, err := tx.Exec(stmt); err != nil {

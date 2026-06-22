@@ -28,21 +28,22 @@ type app struct {
 }
 
 type pageData struct {
-	Scope          lab.Scope
-	Clients        []lab.Client
-	Sites          []lab.Site
-	Contacts       []lab.Contact
-	ContactRoles   []lab.ContactRole
-	Projects       []lab.Project
-	ClientDefaults []lab.ClientDefaults
-	Samples        []lab.Sample
-	Audit          []lab.AuditEvent
-	Departments    []lab.CatalogDepartment
-	Units          []lab.CatalogUnit
-	Methods        []lab.CatalogMethod
-	Analytes       []lab.CatalogAnalyte
-	Services       []lab.AnalysisService
-	Profiles       []lab.AnalysisProfile
+	Scope           lab.Scope
+	Clients         []lab.Client
+	Sites           []lab.Site
+	Contacts        []lab.Contact
+	ContactRoles    []lab.ContactRole
+	Projects        []lab.Project
+	ClientDefaults  []lab.ClientDefaults
+	Samples         []lab.Sample
+	Audit           []lab.AuditEvent
+	Departments     []lab.CatalogDepartment
+	Units           []lab.CatalogUnit
+	Methods         []lab.CatalogMethod
+	Analytes        []lab.CatalogAnalyte
+	Services        []lab.AnalysisService
+	Profiles        []lab.AnalysisProfile
+	SampleReference []lab.SampleReferenceItem
 }
 
 func main() {
@@ -116,6 +117,9 @@ func serve() error {
 	mux.HandleFunc("POST /api/catalog/analytes", application.createCatalogAnalyte)
 	mux.HandleFunc("POST /api/catalog/services", application.createAnalysisService)
 	mux.HandleFunc("POST /api/catalog/profiles", application.createAnalysisProfile)
+	mux.HandleFunc("POST /api/sample-reference", application.createSampleReferenceItem)
+	mux.HandleFunc("POST /api/sample-reference/", application.updateSampleReferenceItem)
+	mux.HandleFunc("DELETE /api/sample-reference/", application.deleteSampleReferenceItem)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	log.Printf("Project Scientist listening on %s", addr)
 	return http.ListenAndServe(addr, securityHeaders(mux))
@@ -408,21 +412,22 @@ func (a *app) apiState(w http.ResponseWriter, r *http.Request) {
 func (a *app) pageData(scope lab.Scope, auditLimit int) pageData {
 	audit, _ := a.store.AuditEventsForScope(scope, auditLimit)
 	return pageData{
-		Scope:          scope,
-		Clients:        a.store.ClientsForScope(scope),
-		Sites:          a.store.SitesForScope(scope),
-		Contacts:       a.store.ContactsForScope(scope),
-		ContactRoles:   a.store.ContactRolesForScope(scope),
-		Projects:       a.store.ProjectsForScope(scope),
-		ClientDefaults: a.store.AllClientDefaultsForScope(scope),
-		Samples:        a.store.SamplesForScope(scope),
-		Audit:          audit,
-		Departments:    a.store.CatalogDepartmentsForScope(scope),
-		Units:          a.store.CatalogUnitsForScope(scope),
-		Methods:        a.store.CatalogMethodsForScope(scope),
-		Analytes:       a.store.CatalogAnalytesForScope(scope),
-		Services:       a.store.AnalysisServicesForScope(scope),
-		Profiles:       a.store.AnalysisProfilesForScope(scope),
+		Scope:           scope,
+		Clients:         a.store.ClientsForScope(scope),
+		Sites:           a.store.SitesForScope(scope),
+		Contacts:        a.store.ContactsForScope(scope),
+		ContactRoles:    a.store.ContactRolesForScope(scope),
+		Projects:        a.store.ProjectsForScope(scope),
+		ClientDefaults:  a.store.AllClientDefaultsForScope(scope),
+		Samples:         a.store.SamplesForScope(scope),
+		Audit:           audit,
+		Departments:     a.store.CatalogDepartmentsForScope(scope),
+		Units:           a.store.CatalogUnitsForScope(scope),
+		Methods:         a.store.CatalogMethodsForScope(scope),
+		Analytes:        a.store.CatalogAnalytesForScope(scope),
+		Services:        a.store.AnalysisServicesForScope(scope),
+		Profiles:        a.store.AnalysisProfilesForScope(scope),
+		SampleReference: a.store.AllSampleReferenceItemsForScope(scope),
 	}
 }
 
@@ -608,6 +613,58 @@ func (a *app) createAnalysisProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	profile, err := a.store.CreateAnalysisProfileForScope(scopeFromRequest(r), lab.AnalysisProfileInput{Name: r.FormValue("name"), ServiceIDs: splitIDs(r.Form["service_ids"])}, actor(r))
 	writeCatalogResult(w, r, profile, err)
+}
+
+func (a *app) createSampleReferenceItem(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	item, err := a.store.CreateSampleReferenceItemForScope(scopeFromRequest(r), sampleReferenceInputFromRequest(r), actor(r))
+	writeCatalogResult(w, r, item, err)
+}
+
+func (a *app) updateSampleReferenceItem(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/sample-reference/")
+	if id == "" || strings.Contains(id, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	item, err := a.store.UpdateSampleReferenceItemForScope(scopeFromRequest(r), id, sampleReferenceInputFromRequest(r), actor(r))
+	writeCatalogResult(w, r, item, err)
+}
+
+func (a *app) deleteSampleReferenceItem(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/sample-reference/")
+	if id == "" || strings.Contains(id, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	if err := a.store.DeleteSampleReferenceItemForScope(scopeFromRequest(r), id, actor(r)); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, lab.ErrAuthorizationDenied) {
+			status = http.StatusForbidden
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	if wantsJSON(r) {
+		writeJSON(w, map[string]string{"status": "ok"}, http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func sampleReferenceInputFromRequest(r *http.Request) lab.SampleReferenceItemInput {
+	active := true
+	if raw := strings.TrimSpace(r.FormValue("active")); raw != "" {
+		active = raw == "1" || strings.EqualFold(raw, "true") || strings.EqualFold(raw, "on") || strings.EqualFold(raw, "yes")
+	}
+	return lab.SampleReferenceItemInput{Kind: lab.SampleReferenceKind(r.FormValue("kind")), Name: r.FormValue("name"), Code: r.FormValue("code"), Description: r.FormValue("description"), SortOrder: parseInt(r.FormValue("sort_order")), Active: active}
 }
 
 func writeCatalogResult(w http.ResponseWriter, r *http.Request, value any, err error) {

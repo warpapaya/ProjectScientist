@@ -190,6 +190,40 @@
 
     <section class="panel">
       <div class="section-head">
+        <h2>Sample reference data</h2>
+        <p>Tenant-scoped matrices/sample types, containers, preservatives, storage locations, and received-condition vocabulary.</p>
+      </div>
+      <form class="form" method="post" action="/api/sample-reference">
+        <select name="kind" required>
+          <option value="matrix">Matrix / sample type</option>
+          <option value="container">Container</option>
+          <option value="preservative">Preservative</option>
+          <option value="storage_location">Storage location</option>
+          <option value="received_condition">Received condition</option>
+        </select>
+        <input name="name" placeholder="Drinking Water" required>
+        <input name="code" placeholder="Code e.g. DW">
+        <input name="description" placeholder="Description">
+        <input name="sort_order" placeholder="Sort order e.g. 10">
+        <input type="hidden" name="active" value="true">
+        <button>Create reference item</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Kind</th><th>Name</th><th>Code</th><th>Description</th><th>Order</th></tr></thead>
+          <tbody>
+          {{range .SampleReference}}
+            <tr><td>{{.Kind}}</td><td><strong>{{.Name}}</strong><small>{{.ID}}</small></td><td>{{.Code}}</td><td>{{.Description}}</td><td>{{.SortOrder}}</td></tr>
+          {{else}}
+            <tr><td colspan="5" class="empty">No sample reference vocabulary configured yet.</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
         <h2>Workflow board</h2>
         <p>One-click legal transitions only. The store rejects illegal jumps and audits every accepted move.</p>
       </div>
