@@ -42,6 +42,18 @@ document.addEventListener('keydown', (event) => {
 });
 
 const commandSearch = document.querySelector('#admin-command-search');
+const csrfToken = document.querySelector('meta[name="psc-csrf-token"]')?.content || '';
+if (csrfToken) {
+  document.querySelectorAll('form[method="post" i]').forEach((form) => {
+    if (!form.querySelector('input[name="csrf_token"]')) {
+      const field = document.createElement('input');
+      field.type = 'hidden';
+      field.name = 'csrf_token';
+      field.value = csrfToken;
+      form.prepend(field);
+    }
+  });
+}
 commandSearch?.addEventListener('input', (event) => filterRows(event.target.value));
 commandSearch?.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter') return;
