@@ -43,10 +43,12 @@ func TestAuthorizeOperationDeniesAndAuditsEveryProtectedOperation(t *testing.T) 
 		OperationSampleIntake,
 		OperationSampleUpdate,
 		OperationSampleTransition,
+		OperationSampleCustody,
 		OperationResultEntry,
 		OperationResultUpdate,
 		OperationResultReview,
 		OperationResultRelease,
+		OperationQCRelate,
 		OperationReportGenerate,
 		OperationReportRelease,
 		OperationReportExport,
@@ -100,10 +102,12 @@ func TestPolicyAllowsExpectedRolesForProtectedOperations(t *testing.T) {
 		{OperationSampleIntake, RoleLabManager},
 		{OperationSampleUpdate, RoleAnalyst},
 		{OperationSampleTransition, RoleAnalyst},
+		{OperationSampleCustody, RoleAnalyst},
 		{OperationResultEntry, RoleAnalyst},
 		{OperationResultUpdate, RoleAnalyst},
 		{OperationResultReview, RoleReviewer},
 		{OperationResultRelease, RoleReportReleaser},
+		{OperationQCRelate, RoleReviewer},
 		{OperationReportGenerate, RoleReviewer},
 		{OperationReportRelease, RoleReportReleaser},
 		{OperationReportExport, RoleReportReleaser},
@@ -120,6 +124,39 @@ func TestPolicyAllowsExpectedRolesForProtectedOperations(t *testing.T) {
 		if err := Authorize(defaultScope(), tc.operation, actor); err != nil {
 			t.Fatalf("%s with %s: expected allowed, got %v", tc.operation, tc.role, err)
 		}
+	}
+}
+
+func TestCatalogAndReferenceMutationsDenyAndAuditUnauthorizedActors(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	unauthorized := actorWithRoles("analyst", RoleAnalyst)
+	if _, err := store.CreateCatalogDepartment(CatalogDepartmentInput{Name: "Wet Chemistry"}, unauthorized); !errors.Is(err, ErrAuthorizationDenied) {
+		t.Fatalf("expected catalog configure denial, got %v", err)
+	}
+	if _, err := store.CreateSampleReferenceItem(SampleReferenceItemInput{Kind: SampleReferenceMatrix, Name: "Drinking Water", Code: "DW", Active: true}, unauthorized); !errors.Is(err, ErrAuthorizationDenied) {
+		t.Fatalf("expected sample reference configure denial, got %v", err)
+	}
+
+	events, err := store.AuditEvents(0)
+	if err != nil {
+		t.Fatalf("audit events: %v", err)
+	}
+	denied := 0
+	for _, event := range events {
+		if event.Action == string(OperationCatalogConfigure) && event.Outcome == AuditOutcomeDenied && event.Reason == "authorization_denied" {
+			denied++
+			if err := ValidateAuditEvent(event); err != nil {
+				t.Fatalf("denied catalog event invalid: %v", err)
+			}
+		}
+	}
+	if denied != 2 {
+		t.Fatalf("expected two audited catalog.configure denials, got %d events=%#v", denied, events)
 	}
 }
 

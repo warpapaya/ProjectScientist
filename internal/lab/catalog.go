@@ -127,7 +127,7 @@ func (s *Store) CreateCatalogDepartmentForScope(scope Scope, input CatalogDepart
 	}
 	var department CatalogDepartment
 	err = s.withTx(func(tx *sql.Tx) error {
-		if err := Authorize(scope, OperationCatalogConfigure, actor); err != nil {
+		if err := requireAuthorizedOperationTx(tx, scope, OperationCatalogConfigure, actor, AuditResource{Type: "catalog", ID: "configure"}, nil); err != nil {
 			return err
 		}
 		next, err := nextCounter(tx, "next_catalog_department")
@@ -172,7 +172,7 @@ func (s *Store) UpdateCatalogUnitForScope(scope Scope, input CatalogUnitUpdateIn
 	}
 	var unit CatalogUnit
 	err = s.withTx(func(tx *sql.Tx) error {
-		if err := Authorize(scope, OperationCatalogConfigure, actor); err != nil {
+		if err := requireAuthorizedOperationTx(tx, scope, OperationCatalogConfigure, actor, AuditResource{Type: "catalog", ID: "configure"}, nil); err != nil {
 			return err
 		}
 		var created string
@@ -210,7 +210,7 @@ func (s *Store) CreateCatalogUnitForScope(scope Scope, input CatalogUnitInput, a
 	}
 	var unit CatalogUnit
 	err = s.withTx(func(tx *sql.Tx) error {
-		if err := Authorize(scope, OperationCatalogConfigure, actor); err != nil {
+		if err := requireAuthorizedOperationTx(tx, scope, OperationCatalogConfigure, actor, AuditResource{Type: "catalog", ID: "configure"}, nil); err != nil {
 			return err
 		}
 		next, err := nextCounter(tx, "next_catalog_unit")
@@ -247,7 +247,7 @@ func (s *Store) CreateCatalogMethodForScope(scope Scope, input CatalogMethodInpu
 	}
 	var method CatalogMethod
 	err = s.withTx(func(tx *sql.Tx) error {
-		if err := Authorize(scope, OperationCatalogConfigure, actor); err != nil {
+		if err := requireAuthorizedOperationTx(tx, scope, OperationCatalogConfigure, actor, AuditResource{Type: "catalog", ID: "configure"}, nil); err != nil {
 			return err
 		}
 		next, err := nextCounter(tx, "next_catalog_method")
@@ -284,7 +284,7 @@ func (s *Store) CreateCatalogAnalyteForScope(scope Scope, input CatalogAnalyteIn
 	}
 	var analyte CatalogAnalyte
 	err = s.withTx(func(tx *sql.Tx) error {
-		if err := Authorize(scope, OperationCatalogConfigure, actor); err != nil {
+		if err := requireAuthorizedOperationTx(tx, scope, OperationCatalogConfigure, actor, AuditResource{Type: "catalog", ID: "configure"}, nil); err != nil {
 			return err
 		}
 		if err := requireOptionalScopedID(tx, "catalog_units", scope, input.DefaultUnitID); err != nil {
@@ -325,7 +325,7 @@ func (s *Store) CreateAnalysisServiceForScope(scope Scope, input AnalysisService
 	}
 	var service AnalysisService
 	err = s.withTx(func(tx *sql.Tx) error {
-		if err := Authorize(scope, OperationCatalogConfigure, actor); err != nil {
+		if err := requireAuthorizedOperationTx(tx, scope, OperationCatalogConfigure, actor, AuditResource{Type: "catalog", ID: "configure"}, nil); err != nil {
 			return err
 		}
 		for table, id := range map[string]string{"catalog_departments": departmentID, "catalog_methods": input.MethodID, "catalog_analytes": input.AnalyteID, "catalog_units": input.UnitID} {
@@ -378,7 +378,7 @@ func (s *Store) CreateAnalysisProfileForScope(scope Scope, input AnalysisProfile
 	}
 	var profile AnalysisProfile
 	err = s.withTx(func(tx *sql.Tx) error {
-		if err := Authorize(scope, OperationCatalogConfigure, actor); err != nil {
+		if err := requireAuthorizedOperationTx(tx, scope, OperationCatalogConfigure, actor, AuditResource{Type: "catalog", ID: "configure"}, nil); err != nil {
 			return err
 		}
 		next, err := nextCounter(tx, "next_analysis_profile")

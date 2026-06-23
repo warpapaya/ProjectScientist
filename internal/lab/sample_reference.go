@@ -67,7 +67,7 @@ func (s *Store) CreateSampleReferenceItemForScope(scope Scope, input SampleRefer
 	}
 	var item SampleReferenceItem
 	err = s.withTx(func(tx *sql.Tx) error {
-		if err := Authorize(scope, OperationCatalogConfigure, actor); err != nil {
+		if err := requireAuthorizedOperationTx(tx, scope, OperationCatalogConfigure, actor, AuditResource{Type: "sample_reference", ID: "configure"}, nil); err != nil {
 			return err
 		}
 		next, err := nextCounter(tx, "next_sample_reference")
@@ -105,7 +105,7 @@ func (s *Store) UpdateSampleReferenceItemForScope(scope Scope, id string, input 
 	}
 	var item SampleReferenceItem
 	err = s.withTx(func(tx *sql.Tx) error {
-		if err := Authorize(scope, OperationCatalogConfigure, actor); err != nil {
+		if err := requireAuthorizedOperationTx(tx, scope, OperationCatalogConfigure, actor, AuditResource{Type: "sample_reference", ID: "configure"}, nil); err != nil {
 			return err
 		}
 		existing, err := sampleReferenceItemByIDTx(tx, scope, id)
@@ -138,7 +138,7 @@ func (s *Store) DeleteSampleReferenceItemForScope(scope Scope, id string, actor 
 		return errors.New("sample reference id is required")
 	}
 	return s.withTx(func(tx *sql.Tx) error {
-		if err := Authorize(scope, OperationCatalogConfigure, actor); err != nil {
+		if err := requireAuthorizedOperationTx(tx, scope, OperationCatalogConfigure, actor, AuditResource{Type: "sample_reference", ID: "configure"}, nil); err != nil {
 			return err
 		}
 		item, err := sampleReferenceItemByIDTx(tx, scope, id)
@@ -218,7 +218,7 @@ func (s *Store) seedSampleReferenceItem(scope Scope, input SampleReferenceItemIn
 		return err
 	}
 	return s.withTx(func(tx *sql.Tx) error {
-		if err := Authorize(scope, OperationCatalogConfigure, actor); err != nil {
+		if err := requireAuthorizedOperationTx(tx, scope, OperationCatalogConfigure, actor, AuditResource{Type: "sample_reference", ID: "configure"}, nil); err != nil {
 			return err
 		}
 		var existingID string
