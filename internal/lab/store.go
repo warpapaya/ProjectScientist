@@ -1049,6 +1049,18 @@ func (s *Store) TransitionSample(sampleID string, next SampleStatus, actor Actor
 }
 
 func (s *Store) TransitionSampleForScope(scope Scope, sampleID string, next SampleStatus, actor ActorContext) error {
+	return s.transitionSampleForScope(scope, sampleID, next, ReleaseOverrideInput{}, actor)
+}
+
+func (s *Store) TransitionSampleWithReleaseOverride(sampleID string, next SampleStatus, override ReleaseOverrideInput, actor ActorContext) error {
+	return s.TransitionSampleWithReleaseOverrideForScope(defaultScope(), sampleID, next, override, actor)
+}
+
+func (s *Store) TransitionSampleWithReleaseOverrideForScope(scope Scope, sampleID string, next SampleStatus, override ReleaseOverrideInput, actor ActorContext) error {
+	return s.transitionSampleForScope(scope, sampleID, next, override, actor)
+}
+
+func (s *Store) transitionSampleForScope(scope Scope, sampleID string, next SampleStatus, override ReleaseOverrideInput, actor ActorContext) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	scope, err := normalizeScope(scope)
@@ -1076,6 +1088,10 @@ func (s *Store) TransitionSampleForScope(scope Scope, sampleID string, next Samp
 		if !allowedTransition(sample.Status, next) {
 			deniedErr = fmt.Errorf("transition %s -> %s is not allowed", sample.Status, next)
 			return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "sample.transition.requested", Outcome: AuditOutcomeDenied, Reason: "transition_not_allowed", Resource: AuditResource{Type: "sample", ID: sample.ID}, Details: map[string]any{"from": string(sample.Status), "to": string(next)}})
+		}
+		if err := s.authorizeSampleReleaseReadinessTx(tx, scope, sample, next, override, actor); err != nil {
+			deniedErr = err
+			return nil
 		}
 		previous := sample.Status
 		sample.Status = next
