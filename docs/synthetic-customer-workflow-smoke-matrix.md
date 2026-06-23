@@ -26,7 +26,7 @@ Status meanings:
 
 - GREEN: current synthetic lab-test evidence supports this slice.
 - YELLOW: partially modeled; useful for planning or controlled synthetic demos only.
-- RED: blocker before migration, customer pilot, production, or customer-facing readiness claim.
+- RED: blocker before migration, customer pilot, production, or customer-facing readiness statement.
 
 ## Matrix summary
 
