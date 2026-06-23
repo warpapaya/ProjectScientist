@@ -634,7 +634,7 @@ func (a *app) createClient(w http.ResponseWriter, r *http.Request) {
 	}
 	client, err := a.store.CreateClientForScope(scopeFromRequest(r), r.FormValue("name"), r.FormValue("email"), actor(r))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeMutationError(w, err)
 		return
 	}
 	if wantsJSON(r) {
@@ -848,7 +848,7 @@ func parseBool(raw string) bool {
 
 func writeMutationResponse(w http.ResponseWriter, r *http.Request, value any, err error) {
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeMutationError(w, err)
 		return
 	}
 	if wantsJSON(r) {
@@ -886,7 +886,7 @@ func (a *app) createSample(w http.ResponseWriter, r *http.Request) {
 	}
 	sample, err := a.store.CreateSampleForScope(scopeFromRequest(r), input, actor(r))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeMutationError(w, err)
 		return
 	}
 	if wantsJSON(r) {
@@ -1422,12 +1422,8 @@ func demoResetActor(r *http.Request) lab.ActorContext {
 
 func actor(r *http.Request) lab.ActorContext {
 	requestID := requestID(r)
-	scope := scopeFromRequest(r)
 	roles := []string{string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser)}
 	memberships := []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: roles}}
-	if scope.TenantID != lab.DefaultTenantID {
-		memberships = append(memberships, lab.TenantMembership{TenantID: scope.TenantID, Roles: roles})
-	}
 	return lab.MustActorContext(lab.ActorContextInput{
 		UserID:            "lab-dev",
 		DisplayName:       "lab-dev",
@@ -1437,6 +1433,14 @@ func actor(r *http.Request) lab.ActorContext {
 		TenantMemberships: memberships,
 		Roles:             roles,
 	})
+}
+
+func writeMutationError(w http.ResponseWriter, err error) {
+	status := http.StatusBadRequest
+	if errors.Is(err, lab.ErrAuthorizationDenied) {
+		status = http.StatusForbidden
+	}
+	http.Error(w, err.Error(), status)
 }
 
 func scopeFromRequest(r *http.Request) lab.Scope {
