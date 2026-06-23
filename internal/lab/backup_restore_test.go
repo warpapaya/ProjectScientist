@@ -3,7 +3,9 @@ package lab
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -67,6 +69,31 @@ func TestBackupSQLiteStoreCreatesRestorableManifestWithAuditTailAndFiles(t *test
 	}
 	if restore.AuditEventCount != manifest.AuditEventCount || restore.AuditTailHash != manifest.AuditTailHash {
 		t.Fatalf("restore audit tail mismatch: got %#v want %#v", restore, manifest)
+	}
+}
+
+func TestBackupRestoreProofScriptUsesAuthorizedSyntheticActor(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	root := filepath.Clean(filepath.Join(wd, "..", ".."))
+	script := filepath.Join(root, "scripts", "backup-restore-proof.sh")
+	proofDir := filepath.Join(root, "tmp", "backup-restore-proof-test", t.Name())
+	if err := os.RemoveAll(proofDir); err != nil {
+		t.Fatalf("clean proof directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(proofDir) })
+
+	cmd := exec.Command("bash", script)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "PSC_BACKUP_PROOF_DIR="+proofDir)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("backup restore proof script failed: %v\n%s", err, output)
+	}
+	if !strings.Contains(string(output), "backup/restore proof ok:") {
+		t.Fatalf("proof script did not report success: %s", output)
 	}
 }
 

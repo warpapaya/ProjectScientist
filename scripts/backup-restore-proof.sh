@@ -69,7 +69,8 @@ func main() {
 	actor := lab.MustActorContext(lab.ActorContextInput{
 		UserID: "backup-proof-operator", DisplayName: "Backup Proof Operator", AuthProvider: "local-dev",
 		RequestID: "backup-restore-proof", CorrelationID: "backup-restore-proof",
-		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID}},
+		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleLabManager)}}},
+		Roles: []string{string(lab.RoleLabManager)},
 	})
 	client, err := store.CreateClient("Okefenokee Backup Proof Lab", "backup-proof@example.test", actor)
 	must("create proof client", err)
