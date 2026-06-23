@@ -3,6 +3,8 @@ const shortcuts = [
   ['2', '#admin-contact-name'],
   ['3', '#admin-service-name'],
   ['4', '#admin-reference-name'],
+  ['5', '#result-entry .result-cell'],
+  ['6', '#result-review input, #result-review button'],
 ];
 
 function focusTarget(selector) {
@@ -49,4 +51,36 @@ commandSearch?.addEventListener('keydown', (event) => {
 
 document.querySelectorAll('[data-command-target]').forEach((field) => {
   field.addEventListener('focus', () => commandSearch?.setAttribute('placeholder', `Focused ${field.getAttribute('placeholder') || field.name}`));
+});
+
+function resultGridFields() {
+  return Array.from(document.querySelectorAll('[data-result-entry-grid] input.result-cell'));
+}
+
+function moveResultFocus(current, direction = 1) {
+  const fields = resultGridFields().filter((field) => !field.disabled && field.offsetParent !== null);
+  const index = fields.indexOf(current);
+  if (index === -1) return false;
+  const next = fields[index + direction];
+  if (!next) return false;
+  next.focus();
+  if (typeof next.select === 'function') next.select();
+  return true;
+}
+
+document.querySelectorAll('[data-result-entry-grid] input.result-cell').forEach((field) => {
+  field.addEventListener('keydown', (event) => {
+    const mod = event.metaKey || event.ctrlKey;
+    if (mod && event.key === 'Enter') {
+      event.preventDefault();
+      field.closest('form')?.requestSubmit();
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      moveResultFocus(field, event.shiftKey ? -1 : 1);
+    }
+  });
+  field.addEventListener('focus', () => field.closest('tr')?.classList.add('active-row'));
+  field.addEventListener('blur', () => field.closest('tr')?.classList.remove('active-row'));
 });
