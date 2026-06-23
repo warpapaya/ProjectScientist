@@ -118,40 +118,44 @@ func serve() error {
 		demoResetEnabled: strings.EqualFold(getenv("PSC_ENABLE_DEMO_RESET", "false"), "true"),
 		fixturePath:      getenv("PSC_SYNTHETIC_FIXTURE_PATH", "/app/fixtures/mvp_synthetic_lab.json"),
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", application.index)
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
-	mux.HandleFunc("GET /api/state", application.apiState)
-	mux.HandleFunc("POST /api/demo/reset", application.demoReset)
-	mux.HandleFunc("POST /api/clients", application.createClient)
-	mux.HandleFunc("POST /api/sites", application.createSite)
-	mux.HandleFunc("POST /api/contacts", application.createContact)
-	mux.HandleFunc("POST /api/contact-roles", application.assignContactRole)
-	mux.HandleFunc("POST /api/projects", application.createProject)
-	mux.HandleFunc("POST /api/client-defaults", application.upsertClientDefaults)
-	mux.HandleFunc("POST /api/sample-intake-templates", application.createSampleIntakeTemplate)
-	mux.HandleFunc("POST /api/sample-intake-templates/", application.createSamplesFromTemplate)
-	mux.HandleFunc("POST /api/results", application.createResult)
-	mux.HandleFunc("POST /api/results/", application.resultAction)
-	mux.HandleFunc("POST /api/samples", application.createSample)
-	mux.HandleFunc("GET /api/samples/", application.sampleLabelArtifact)
-	mux.HandleFunc("GET /api/report-artifacts/", application.reportArtifactDownload)
-	mux.HandleFunc("GET /api/coc-packages/", application.cocPackageDownload)
-	mux.HandleFunc("POST /api/samples/", application.sampleAction)
-	mux.HandleFunc("POST /api/worksheets", application.createWorksheet)
-	mux.HandleFunc("POST /api/worksheets/", application.routeWorksheetMutation)
-	mux.HandleFunc("POST /api/catalog/departments", application.createCatalogDepartment)
-	mux.HandleFunc("POST /api/catalog/units", application.createCatalogUnit)
-	mux.HandleFunc("POST /api/catalog/methods", application.createCatalogMethod)
-	mux.HandleFunc("POST /api/catalog/analytes", application.createCatalogAnalyte)
-	mux.HandleFunc("POST /api/catalog/services", application.createAnalysisService)
-	mux.HandleFunc("POST /api/catalog/profiles", application.createAnalysisProfile)
-	mux.HandleFunc("POST /api/sample-reference", application.createSampleReferenceItem)
-	mux.HandleFunc("POST /api/sample-reference/", application.updateSampleReferenceItem)
-	mux.HandleFunc("DELETE /api/sample-reference/", application.deleteSampleReferenceItem)
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	log.Printf("Project Scientist listening on %s", addr)
-	return http.ListenAndServe(addr, securityHeaders(mux))
+	return http.ListenAndServe(addr, securityHeaders(application.routes()))
+}
+
+func (a *app) routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", a.index)
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+	mux.HandleFunc("GET /api/state", a.apiState)
+	mux.HandleFunc("POST /api/demo/reset", a.demoReset)
+	mux.HandleFunc("POST /api/clients", a.createClient)
+	mux.HandleFunc("POST /api/sites", a.createSite)
+	mux.HandleFunc("POST /api/contacts", a.createContact)
+	mux.HandleFunc("POST /api/contact-roles", a.assignContactRole)
+	mux.HandleFunc("POST /api/projects", a.createProject)
+	mux.HandleFunc("POST /api/client-defaults", a.upsertClientDefaults)
+	mux.HandleFunc("POST /api/sample-intake-templates", a.createSampleIntakeTemplate)
+	mux.HandleFunc("POST /api/sample-intake-templates/", a.createSamplesFromTemplate)
+	mux.HandleFunc("POST /api/results", a.createResult)
+	mux.HandleFunc("POST /api/results/", a.resultAction)
+	mux.HandleFunc("POST /api/samples", a.createSample)
+	mux.HandleFunc("GET /api/samples/", a.sampleDownloadAction)
+	mux.HandleFunc("GET /api/report-artifacts/", a.reportArtifactDownload)
+	mux.HandleFunc("GET /api/coc-packages/", a.cocPackageDownload)
+	mux.HandleFunc("POST /api/samples/", a.sampleAction)
+	mux.HandleFunc("POST /api/worksheets", a.createWorksheet)
+	mux.HandleFunc("POST /api/worksheets/", a.routeWorksheetMutation)
+	mux.HandleFunc("POST /api/catalog/departments", a.createCatalogDepartment)
+	mux.HandleFunc("POST /api/catalog/units", a.createCatalogUnit)
+	mux.HandleFunc("POST /api/catalog/methods", a.createCatalogMethod)
+	mux.HandleFunc("POST /api/catalog/analytes", a.createCatalogAnalyte)
+	mux.HandleFunc("POST /api/catalog/services", a.createAnalysisService)
+	mux.HandleFunc("POST /api/catalog/profiles", a.createAnalysisProfile)
+	mux.HandleFunc("POST /api/sample-reference", a.createSampleReferenceItem)
+	mux.HandleFunc("POST /api/sample-reference/", a.updateSampleReferenceItem)
+	mux.HandleFunc("DELETE /api/sample-reference/", a.deleteSampleReferenceItem)
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+	return mux
 }
 
 func auditVerify(args []string, stdout, stderr io.Writer) error {
@@ -823,8 +827,24 @@ func (a *app) sampleAction(w http.ResponseWriter, r *http.Request) {
 		a.generateCOCPackage(w, r)
 		return
 	}
+	if strings.HasSuffix(r.URL.Path, "/report-preview") {
+		a.previewReportArtifact(w, r)
+		return
+	}
 	if strings.HasSuffix(r.URL.Path, "/report-release") {
 		a.releaseReportArtifact(w, r)
+		return
+	}
+	http.NotFound(w, r)
+}
+
+func (a *app) sampleDownloadAction(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(r.URL.Path, "/label-artifact") {
+		a.sampleLabelArtifact(w, r)
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/report-preview") {
+		a.previewReportArtifact(w, r)
 		return
 	}
 	http.NotFound(w, r)
@@ -929,6 +949,26 @@ func (a *app) generateCOCPackage(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
 }
 
+func (a *app) previewReportArtifact(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/report-preview") {
+		http.NotFound(w, r)
+		return
+	}
+	sampleID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/samples/"), "/report-preview")
+	if sampleID == "" || strings.Contains(sampleID, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	artifact, err := a.store.PreviewCOAArtifactForScope(scopeFromRequest(r), lab.COAGenerationInput{SampleID: sampleID, Template: defaultCOATemplateFromRequest(r)})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", artifact.Format)
+	w.Header().Set("X-Project-Scientist-Preview", "true")
+	_, _ = w.Write(artifact.Content)
+}
+
 func (a *app) releaseReportArtifact(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasSuffix(r.URL.Path, "/report-release") {
 		http.NotFound(w, r)
@@ -943,6 +983,24 @@ func (a *app) releaseReportArtifact(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	released, err := a.store.GenerateCOAReportArtifactForScope(scopeFromRequest(r), lab.COAGenerationInput{SampleID: sampleID, Template: defaultCOATemplateFromRequest(r)}, actor(r))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, lab.ErrAuthorizationDenied) {
+			status = http.StatusForbidden
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	if wantsJSON(r) {
+		writeJSON(w, released, http.StatusCreated)
+		return
+	}
+	http.Redirect(w, r, scopedHome(scopeFromRequest(r))+"#report-release", http.StatusSeeOther)
+}
+
+func defaultCOATemplateFromRequest(r *http.Request) lab.COATemplate {
+	_ = r.ParseForm()
 	templateID := strings.TrimSpace(r.FormValue("template_id"))
 	if templateID == "" {
 		templateID = "coa-standard"
@@ -959,20 +1017,7 @@ func (a *app) releaseReportArtifact(w http.ResponseWriter, r *http.Request) {
 	if clientName == "" {
 		clientName = "Synthetic Client"
 	}
-	released, err := a.store.GenerateCOAReportArtifactForScope(scopeFromRequest(r), lab.COAGenerationInput{SampleID: sampleID, Template: lab.COATemplate{ID: templateID, Version: templateVersion, Style: lab.COAStyleCENLA, LabName: labName, ClientName: clientName}}, actor(r))
-	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, lab.ErrAuthorizationDenied) {
-			status = http.StatusForbidden
-		}
-		http.Error(w, err.Error(), status)
-		return
-	}
-	if wantsJSON(r) {
-		writeJSON(w, released, http.StatusCreated)
-		return
-	}
-	http.Redirect(w, r, scopedHome(scopeFromRequest(r))+"#report-release", http.StatusSeeOther)
+	return lab.COATemplate{ID: templateID, Version: templateVersion, Style: lab.COAStyleCENLA, LabName: labName, ClientName: clientName}
 }
 
 func (a *app) reportArtifactDownload(w http.ResponseWriter, r *http.Request) {

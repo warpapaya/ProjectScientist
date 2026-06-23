@@ -85,6 +85,30 @@ func RenderCOAArtifact(input COARenderInput) (COAArtifact, error) {
 	return COAArtifact{Format: COAArtifactFormatText, ContentHash: hashBytes(content), Content: content}, nil
 }
 
+func (s *Store) PreviewCOAArtifact(input COAGenerationInput) (COAArtifact, error) {
+	return s.PreviewCOAArtifactForScope(defaultScope(), input)
+}
+
+func (s *Store) PreviewCOAArtifactForScope(scope Scope, input COAGenerationInput) (COAArtifact, error) {
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return COAArtifact{}, err
+	}
+	input.SampleID = strings.TrimSpace(input.SampleID)
+	if input.SampleID == "" {
+		return COAArtifact{}, errors.New("sample id is required")
+	}
+	input.Template = normalizeCOATemplate(input.Template)
+	if err := validateCOATemplate(input.Template); err != nil {
+		return COAArtifact{}, err
+	}
+	snapshot, err := s.reportDataSnapshotForCOA(scope, input.SampleID)
+	if err != nil {
+		return COAArtifact{}, err
+	}
+	return RenderCOAArtifact(COARenderInput{Template: input.Template, Snapshot: snapshot})
+}
+
 func (s *Store) GenerateCOAReportArtifact(input COAGenerationInput, actor ActorContext) (ReleasedReportArtifact, error) {
 	return s.GenerateCOAReportArtifactForScope(defaultScope(), input, actor)
 }

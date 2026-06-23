@@ -24,10 +24,19 @@ func TestReportReleaseDeskShowsBlockedReleaseAndAmendmentActions(t *testing.T) {
 		t.Fatalf("index status=%d body=%s", indexRR.Code, indexRR.Body.String())
 	}
 	blockedBody := indexRR.Body.String()
-	for _, want := range []string{"Report release desk", "Blocked", "sample_status", "unaccepted_result", "Preview COA", "Release report", "/api/samples/" + sample.ID + "/report-release"} {
+	for _, want := range []string{"Report release desk", "Blocked", "sample_status", "unaccepted_result", "Preview COA", "Release report", "/api/samples/" + sample.ID + "/report-preview", "/api/samples/" + sample.ID + "/report-release"} {
 		if !strings.Contains(blockedBody, want) {
 			t.Fatalf("release desk missing %q before readiness:\n%s", want, blockedBody)
 		}
+	}
+
+	previewRR := httptest.NewRecorder()
+	app.routes().ServeHTTP(previewRR, httptest.NewRequest(http.MethodGet, "/api/samples/"+sample.ID+"/report-preview?tenant_id="+lab.DefaultTenantID+"&lab_id="+lab.DefaultLabID, nil))
+	if previewRR.Code != http.StatusOK || !strings.Contains(previewRR.Body.String(), "CERTIFICATE OF ANALYSIS") || !strings.Contains(previewRR.Body.String(), sample.ID) {
+		t.Fatalf("preview should render COA content without releasing, status=%d body=%s", previewRR.Code, previewRR.Body.String())
+	}
+	if readiness, ok := store.ReportReleaseReadinessForScope(lab.DefaultScope, sample.ID); !ok || readiness.CurrentArtifactID != "" {
+		t.Fatalf("preview must not create a current report artifact: ok=%v readiness=%#v", ok, readiness)
 	}
 
 	blockedRelease := performForm(t, app.sampleAction, "/api/samples/"+sample.ID+"/report-release", url.Values{"template_id": {"coa-standard"}, "template_version": {"2026.06"}}, lab.DefaultTenantID, lab.DefaultLabID)
