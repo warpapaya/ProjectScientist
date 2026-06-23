@@ -621,6 +621,7 @@ var sqliteMigrations = []string{
 		data_snapshot_json TEXT NOT NULL,
 		reviewed_by TEXT NOT NULL DEFAULT '',
 		released_by TEXT NOT NULL CHECK (length(trim(released_by)) > 0),
+		release_signature TEXT NOT NULL CHECK (length(trim(release_signature)) > 0),
 		released_at TEXT NOT NULL,
 		content_hash TEXT NOT NULL,
 		created_at TEXT NOT NULL
@@ -651,6 +652,8 @@ var sqliteMigrations = []string{
 		created_at TEXT NOT NULL,
 		PRIMARY KEY(superseded_snapshot_id, superseding_snapshot_id)
 	);`,
+	`CREATE TRIGGER IF NOT EXISTS report_supersessions_immutable_update BEFORE UPDATE ON report_supersessions BEGIN SELECT RAISE(ABORT, 'report supersession is immutable'); END;`,
+	`CREATE TRIGGER IF NOT EXISTS report_supersessions_immutable_delete BEFORE DELETE ON report_supersessions BEGIN SELECT RAISE(ABORT, 'report supersession is immutable'); END;`,
 	`CREATE TABLE IF NOT EXISTS coc_packages (
 		id TEXT PRIMARY KEY,
 		tenant_id TEXT NOT NULL,
@@ -853,6 +856,16 @@ func (s *Store) migrateV1AuditSchema(ctx context.Context) error {
 	}
 	if legacyEntityColumns || !auditColumns["actor_json"] || !auditColumns["resource_json"] || !auditColumns["event_id"] || !auditColumns["correlation_id"] {
 		if err := s.rebuildLegacyAuditRows(ctx, legacyEntityColumns); err != nil {
+			return err
+		}
+	}
+
+	reportSnapshotColumns, err := tableColumns(ctx, s.db, "report_snapshots")
+	if err != nil {
+		return err
+	}
+	if !reportSnapshotColumns["release_signature"] {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE report_snapshots ADD COLUMN release_signature TEXT NOT NULL DEFAULT 'legacy release signature'`); err != nil {
 			return err
 		}
 	}

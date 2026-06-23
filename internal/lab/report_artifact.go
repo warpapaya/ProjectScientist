@@ -18,6 +18,7 @@ type ReportReleaseInput struct {
 	GenerationInputs   map[string]string `json:"generation_inputs"`
 	ArtifactFormat     string            `json:"artifact_format"`
 	ArtifactContent    []byte            `json:"artifact_content"`
+	ReleaseSignature   string            `json:"release_signature"`
 	SupersessionReason string            `json:"supersession_reason"`
 }
 
@@ -37,6 +38,7 @@ type ReportSnapshot struct {
 	DataSnapshot           ReportDataSnapshot `json:"data_snapshot"`
 	ReviewedBy             string             `json:"reviewed_by"`
 	ReleasedBy             string             `json:"released_by"`
+	ReleaseSignature       string             `json:"release_signature"`
 	ReleasedAt             time.Time          `json:"released_at"`
 	ContentHash            string             `json:"content_hash"`
 	SupersedesSnapshotID   string             `json:"supersedes_snapshot_id,omitempty"`
@@ -120,9 +122,18 @@ func (s *Store) ReleaseReportArtifactForScope(scope Scope, input ReportReleaseIn
 				return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "report.release.denied", Outcome: AuditOutcomeDenied, Reason: "unaccepted_result", Resource: AuditResource{Type: "result", ID: result.ID}, Details: map[string]any{"sample_id": sample.ID, "status": string(result.Status)}})
 			}
 		}
+		qcBlockers, err := qcReleaseBlockersForSampleTx(tx, scope, sample.ID)
+		if err != nil {
+			return err
+		}
+		if len(qcBlockers) > 0 {
+			deniedErr = fmt.Errorf("report artifact requires accepted QC batch(es) for released sample %q: %s", sample.ID, strings.Join(qcBlockerIDs(qcBlockers), ", "))
+			return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "report.release.denied", Outcome: AuditOutcomeDenied, Reason: "qc_not_accepted", Resource: AuditResource{Type: "sample", ID: sample.ID}, Details: map[string]any{"qc_batches": qcBlockerDetails(qcBlockers)}})
+		}
 
 		now := time.Now().UTC()
-		payload, err := buildReportSnapshotPayload(sample, results, input.TemplateID, input.TemplateVersion, input.GenerationInputs, normalizeActorContext(actor, "report-release").UserID, now)
+		releasedBy := normalizeActorContext(actor, "report-release").UserID
+		payload, err := buildReportSnapshotPayload(sample, results, input.TemplateID, input.TemplateVersion, input.GenerationInputs, releasedBy, input.ReleaseSignature, now)
 		if err != nil {
 			return err
 		}
@@ -138,7 +149,7 @@ func (s *Store) ReleaseReportArtifactForScope(scope Scope, input ReportReleaseIn
 		if err != nil {
 			return err
 		}
-		snapshot := ReportSnapshot{ID: fmt.Sprintf("RS-%06d", nextSnapshot), TenantID: scope.TenantID, LabID: scope.LabID, SampleID: sample.ID, TemplateID: input.TemplateID, TemplateVersion: input.TemplateVersion, GenerationInputs: input.GenerationInputs, DataSnapshot: payload.DataSnapshot, ReviewedBy: payload.ReviewedBy, ReleasedBy: normalizeActorContext(actor, "report-release").UserID, ReleasedAt: now, ContentHash: payload.ContentHash, CreatedAt: now}
+		snapshot := ReportSnapshot{ID: fmt.Sprintf("RS-%06d", nextSnapshot), TenantID: scope.TenantID, LabID: scope.LabID, SampleID: sample.ID, TemplateID: input.TemplateID, TemplateVersion: input.TemplateVersion, GenerationInputs: input.GenerationInputs, DataSnapshot: payload.DataSnapshot, ReviewedBy: payload.ReviewedBy, ReleasedBy: releasedBy, ReleaseSignature: input.ReleaseSignature, ReleasedAt: now, ContentHash: payload.ContentHash, CreatedAt: now}
 		artifactHash := hashBytes(input.ArtifactContent)
 		artifact := ReportArtifact{ID: fmt.Sprintf("RA-%06d", nextArtifact), TenantID: scope.TenantID, LabID: scope.LabID, SampleID: sample.ID, SnapshotID: snapshot.ID, Format: input.ArtifactFormat, ContentHash: artifactHash, Content: append([]byte(nil), input.ArtifactContent...), CreatedAt: now}
 		if previous != nil {
@@ -149,7 +160,7 @@ func (s *Store) ReleaseReportArtifactForScope(scope Scope, input ReportReleaseIn
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO report_snapshots(id, tenant_id, lab_id, sample_id, template_id, template_version, generation_inputs_json, data_snapshot_json, reviewed_by, released_by, released_at, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, snapshot.ID, snapshot.TenantID, snapshot.LabID, snapshot.SampleID, snapshot.TemplateID, snapshot.TemplateVersion, string(generationJSON), string(payload.CanonicalJSON), snapshot.ReviewedBy, snapshot.ReleasedBy, formatTime(snapshot.ReleasedAt), snapshot.ContentHash, formatTime(snapshot.CreatedAt)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO report_snapshots(id, tenant_id, lab_id, sample_id, template_id, template_version, generation_inputs_json, data_snapshot_json, reviewed_by, released_by, release_signature, released_at, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, snapshot.ID, snapshot.TenantID, snapshot.LabID, snapshot.SampleID, snapshot.TemplateID, snapshot.TemplateVersion, string(generationJSON), string(payload.CanonicalJSON), snapshot.ReviewedBy, snapshot.ReleasedBy, snapshot.ReleaseSignature, formatTime(snapshot.ReleasedAt), snapshot.ContentHash, formatTime(snapshot.CreatedAt)); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`INSERT INTO report_artifacts(id, tenant_id, lab_id, sample_id, snapshot_id, format, content_hash, content_blob, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, artifact.ID, artifact.TenantID, artifact.LabID, artifact.SampleID, artifact.SnapshotID, artifact.Format, artifact.ContentHash, artifact.Content, formatTime(artifact.CreatedAt)); err != nil {
@@ -198,6 +209,7 @@ func normalizeReportReleaseInput(input ReportReleaseInput) ReportReleaseInput {
 	input.TemplateID = strings.TrimSpace(input.TemplateID)
 	input.TemplateVersion = strings.TrimSpace(input.TemplateVersion)
 	input.ArtifactFormat = strings.TrimSpace(input.ArtifactFormat)
+	input.ReleaseSignature = strings.TrimSpace(input.ReleaseSignature)
 	input.SupersessionReason = strings.TrimSpace(input.SupersessionReason)
 	if input.GenerationInputs == nil {
 		input.GenerationInputs = map[string]string{}
@@ -212,6 +224,14 @@ func normalizeReportReleaseInput(input ReportReleaseInput) ReportReleaseInput {
 	}
 	input.GenerationInputs = normalized
 	return input
+}
+
+func reportReleaseSignature(actor ActorContext) string {
+	userID := normalizeActorContext(actor, "report-release").UserID
+	if userID == "" {
+		userID = "report-release"
+	}
+	return userID + " signed report release approval"
 }
 
 func validateReportReleaseInput(input ReportReleaseInput) error {
@@ -230,10 +250,13 @@ func validateReportReleaseInput(input ReportReleaseInput) error {
 	if len(input.ArtifactContent) == 0 {
 		return errors.New("report artifact content is required")
 	}
+	if input.ReleaseSignature == "" {
+		return errors.New("report release signature is required")
+	}
 	return nil
 }
 
-func buildReportSnapshotPayload(sample Sample, results []Result, templateID, templateVersion string, generationInputs map[string]string, releasedBy string, releasedAt time.Time) (reportSnapshotPayload, error) {
+func buildReportSnapshotPayload(sample Sample, results []Result, templateID, templateVersion string, generationInputs map[string]string, releasedBy, releaseSignature string, releasedAt time.Time) (reportSnapshotPayload, error) {
 	reviewedBy := joinedReviewedBy(results)
 	data := ReportDataSnapshot{Sample: sample, Results: append([]Result(nil), results...)}
 	canonical := struct {
@@ -244,8 +267,9 @@ func buildReportSnapshotPayload(sample Sample, results []Result, templateID, tem
 		GenerationInputs map[string]string `json:"generation_inputs"`
 		ReviewedBy       string            `json:"reviewed_by"`
 		ReleasedBy       string            `json:"released_by"`
+		ReleaseSignature string            `json:"release_signature"`
 		ReleasedAt       string            `json:"released_at"`
-	}{Sample: data.Sample, Results: data.Results, TemplateID: strings.TrimSpace(templateID), TemplateVersion: strings.TrimSpace(templateVersion), GenerationInputs: generationInputs, ReviewedBy: reviewedBy, ReleasedBy: strings.TrimSpace(releasedBy), ReleasedAt: formatTime(releasedAt)}
+	}{Sample: data.Sample, Results: data.Results, TemplateID: strings.TrimSpace(templateID), TemplateVersion: strings.TrimSpace(templateVersion), GenerationInputs: generationInputs, ReviewedBy: reviewedBy, ReleasedBy: strings.TrimSpace(releasedBy), ReleaseSignature: strings.TrimSpace(releaseSignature), ReleasedAt: formatTime(releasedAt)}
 	payload, err := json.Marshal(canonical)
 	if err != nil {
 		return reportSnapshotPayload{}, err
@@ -301,10 +325,10 @@ func resultsForSampleTx(q interface {
 type reportSnapshotQueryer interface{ QueryRow(string, ...any) *sql.Row }
 
 func reportSnapshotByIDTx(q reportSnapshotQueryer, scope Scope, id string) (ReportSnapshot, error) {
-	row := q.QueryRow(`SELECT s.id, s.tenant_id, s.lab_id, s.sample_id, s.template_id, s.template_version, s.generation_inputs_json, s.data_snapshot_json, s.reviewed_by, s.released_by, s.released_at, s.content_hash, s.created_at, COALESCE(prev.superseded_snapshot_id, ''), COALESCE(next.superseding_snapshot_id, '') FROM report_snapshots s LEFT JOIN report_supersessions prev ON prev.superseding_snapshot_id = s.id LEFT JOIN report_supersessions next ON next.superseded_snapshot_id = s.id WHERE s.tenant_id = ? AND s.lab_id = ? AND s.id = ?`, scope.TenantID, scope.LabID, id)
+	row := q.QueryRow(`SELECT s.id, s.tenant_id, s.lab_id, s.sample_id, s.template_id, s.template_version, s.generation_inputs_json, s.data_snapshot_json, s.reviewed_by, s.released_by, s.release_signature, s.released_at, s.content_hash, s.created_at, COALESCE(prev.superseded_snapshot_id, ''), COALESCE(next.superseding_snapshot_id, '') FROM report_snapshots s LEFT JOIN report_supersessions prev ON prev.superseding_snapshot_id = s.id LEFT JOIN report_supersessions next ON next.superseded_snapshot_id = s.id WHERE s.tenant_id = ? AND s.lab_id = ? AND s.id = ?`, scope.TenantID, scope.LabID, id)
 	var snapshot ReportSnapshot
 	var generationJSON, dataJSON, releasedAt, createdAt string
-	if err := row.Scan(&snapshot.ID, &snapshot.TenantID, &snapshot.LabID, &snapshot.SampleID, &snapshot.TemplateID, &snapshot.TemplateVersion, &generationJSON, &dataJSON, &snapshot.ReviewedBy, &snapshot.ReleasedBy, &releasedAt, &snapshot.ContentHash, &createdAt, &snapshot.SupersedesSnapshotID, &snapshot.SupersededBySnapshotID); err != nil {
+	if err := row.Scan(&snapshot.ID, &snapshot.TenantID, &snapshot.LabID, &snapshot.SampleID, &snapshot.TemplateID, &snapshot.TemplateVersion, &generationJSON, &dataJSON, &snapshot.ReviewedBy, &snapshot.ReleasedBy, &snapshot.ReleaseSignature, &releasedAt, &snapshot.ContentHash, &createdAt, &snapshot.SupersedesSnapshotID, &snapshot.SupersededBySnapshotID); err != nil {
 		return ReportSnapshot{}, err
 	}
 	if err := json.Unmarshal([]byte(generationJSON), &snapshot.GenerationInputs); err != nil {
