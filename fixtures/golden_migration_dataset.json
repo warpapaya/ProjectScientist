@@ -1,0 +1,212 @@
+{
+  "dataset_id": "psc-rm-073-golden-migration-v1",
+  "version": "2026-06-22",
+  "synthetic_only": true,
+  "boundary": "Lab-test only synthetic golden migration dataset; not production-ready, customer-ready, migration-approved, or suitable for customer data.",
+  "fixture_families": [
+    {
+      "id": "precast-industrial",
+      "style": "precast industrial materials workflow analog with concrete washout, wastewater, solids, chain-of-custody, batch chemistry, and signed COA expectations",
+      "workflow": [
+        "receive multi-container industrial sample set under one synthetic chain-of-custody",
+        "expand profile into pH, TSS, alkalinity, and metals analysis request lines",
+        "assign wet chemistry and metals worksheet batches with method blank and LCS controls",
+        "review batch QC before report release",
+        "produce COA package with custody summary and analyte table"
+      ]
+    },
+    {
+      "id": "municipal-water",
+      "style": "municipal environmental water workflow analog with routine compliance samples, field measurements, microbiology placeholder, and EDD-style export expectations",
+      "workflow": [
+        "receive chilled drinking-water and wastewater grab samples",
+        "preserve container metadata and sampled/received timestamps",
+        "expand nutrient, field, metals, and microbiology placeholder services",
+        "review holding-time and qualifier checks",
+        "produce client portal result summary plus machine-readable EDD rows"
+      ]
+    },
+    {
+      "id": "materials-forensics",
+      "style": "materials forensics workflow analog with air/filter/bulk samples, microscopy-style qualitative findings, subcontract flags, and narrative report expectations",
+      "workflow": [
+        "receive batch of filter and bulk material samples with project-level custody",
+        "create per-sample analysis lines for gravimetric, microscopy, and metals services",
+        "track subcontract-required line without treating it as complete",
+        "review analyst narrative and QC duplicate agreement",
+        "produce narrative report package with table, comments, and attachment manifest"
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "legacy_id": "SYN-CLIENT-001",
+      "name": "Pine River Precast Demo",
+      "email": "reports.pine-river@example.test",
+      "family_id": "precast-industrial"
+    },
+    {
+      "legacy_id": "SYN-CLIENT-002",
+      "name": "Bayou Parish Utilities Demo",
+      "email": "lab.bayou-parish@example.test",
+      "family_id": "municipal-water"
+    },
+    {
+      "legacy_id": "SYN-CLIENT-003",
+      "name": "Atlas Materials Review Demo",
+      "email": "projects.atlas-materials@example.test",
+      "family_id": "materials-forensics"
+    }
+  ],
+  "samples": [
+    {
+      "legacy_id": "SYN-SAMPLE-PI-0001",
+      "client_legacy_id": "SYN-CLIENT-001",
+      "family_id": "precast-industrial",
+      "client_sample_id": "PI-WW-2026-0001",
+      "matrix": "industrial wastewater",
+      "containers": ["500 mL HDPE preserved", "250 mL HDPE unpreserved", "wide-mouth solids jar"],
+      "analyses": ["pH", "Total Suspended Solids", "Alkalinity", "Lead"],
+      "custody_events": ["received", "split-for-metals", "worksheet-assigned", "reviewed", "reported"]
+    },
+    {
+      "legacy_id": "SYN-SAMPLE-MW-0001",
+      "client_legacy_id": "SYN-CLIENT-002",
+      "family_id": "municipal-water",
+      "client_sample_id": "MW-DW-2026-0001",
+      "matrix": "drinking water",
+      "containers": ["sterile 120 mL bottle", "250 mL amber", "500 mL HDPE preserved"],
+      "analyses": ["pH", "Nitrate as N", "Total Coliform", "Copper"],
+      "custody_events": ["received-chilled", "microbiology-hold-started", "worksheet-assigned", "reviewed", "edd-exported"]
+    },
+    {
+      "legacy_id": "SYN-SAMPLE-MF-0001",
+      "client_legacy_id": "SYN-CLIENT-003",
+      "family_id": "materials-forensics",
+      "client_sample_id": "MF-BULK-2026-0001",
+      "matrix": "bulk material",
+      "containers": ["sealed bulk bag", "filter cassette"],
+      "analyses": ["Gravimetric Dust", "Microscopy Screen", "Lead", "Narrative Review"],
+      "custody_events": ["received", "subsampled", "microscopy-reviewed", "narrative-approved", "reported"]
+    }
+  ],
+  "analyses": [
+    {"sample_legacy_id": "SYN-SAMPLE-PI-0001", "service": "pH", "method": "Synthetic SM4500-H+B", "unit": "pH units", "result": "7.42", "qualifier": "", "qc_role": "field-check"},
+    {"sample_legacy_id": "SYN-SAMPLE-PI-0001", "service": "Total Suspended Solids", "method": "Synthetic SM2540-D", "unit": "mg/L", "result": "18", "qualifier": "", "qc_role": "batch-sample"},
+    {"sample_legacy_id": "SYN-SAMPLE-PI-0001", "service": "Lead", "method": "Synthetic EPA 200.8", "unit": "ug/L", "result": "2.1", "qualifier": "J", "qc_role": "batch-sample"},
+    {"sample_legacy_id": "SYN-SAMPLE-MW-0001", "service": "Nitrate as N", "method": "Synthetic EPA 300.0", "unit": "mg/L", "result": "0.64", "qualifier": "", "qc_role": "batch-sample"},
+    {"sample_legacy_id": "SYN-SAMPLE-MW-0001", "service": "Total Coliform", "method": "Synthetic SM9223", "unit": "P/A", "result": "Absent", "qualifier": "", "qc_role": "microbiology-placeholder"},
+    {"sample_legacy_id": "SYN-SAMPLE-MF-0001", "service": "Microscopy Screen", "method": "Synthetic Microscopy SOP-01", "unit": "qualitative", "result": "No regulated fibers observed", "qualifier": "", "qc_role": "reviewed-finding"},
+    {"sample_legacy_id": "SYN-SAMPLE-MF-0001", "service": "Narrative Review", "method": "Synthetic Technical Review", "unit": "text", "result": "See synthetic narrative package", "qualifier": "N", "qc_role": "narrative"}
+  ],
+  "qc_batches": [
+    {
+      "id": "SYN-QC-WETCHEM-001",
+      "family_id": "precast-industrial",
+      "method": "Synthetic wet chemistry batch",
+      "samples": ["SYN-SAMPLE-PI-0001"],
+      "checks": ["method blank is below reporting limit", "LCS recovery within 80-120 percent", "duplicate RPD reviewed when present"]
+    },
+    {
+      "id": "SYN-QC-WATER-001",
+      "family_id": "municipal-water",
+      "method": "Synthetic water compliance batch",
+      "samples": ["SYN-SAMPLE-MW-0001"],
+      "checks": ["holding time warning captured", "microbiology placeholder is not released as production claim", "EDD rows reconcile to imported samples"]
+    },
+    {
+      "id": "SYN-QC-MATERIALS-001",
+      "family_id": "materials-forensics",
+      "method": "Synthetic materials review batch",
+      "samples": ["SYN-SAMPLE-MF-0001"],
+      "checks": ["analyst narrative has reviewer acknowledgement", "subcontract flag blocks final release until resolved", "attachment manifest is present"]
+    }
+  ],
+  "reports": [
+    {
+      "id": "SYN-REPORT-PI-001",
+      "family_id": "precast-industrial",
+      "outputs": ["COA PDF", "custody appendix"],
+      "includes": ["client/project", "sample receipt", "result table", "QC summary", "authorized release actor"]
+    },
+    {
+      "id": "SYN-REPORT-MW-001",
+      "family_id": "municipal-water",
+      "outputs": ["COA PDF", "CSV EDD"],
+      "includes": ["holding-time notes", "field measurements", "EDD row hash", "review status"]
+    },
+    {
+      "id": "SYN-REPORT-MF-001",
+      "family_id": "materials-forensics",
+      "outputs": ["narrative PDF", "attachment manifest"],
+      "includes": ["analyst narrative", "qualitative findings", "subcontract status", "review signature placeholder"]
+    }
+  ],
+  "expected_parity_gaps": [
+    {
+      "id": "gap-contact-role-import",
+      "severity": "medium",
+      "current_behavior": "client import currently migrates client name/email only; contacts and report-recipient roles remain fixture-only expectations",
+      "required_for": ["municipal-water", "precast-industrial", "materials-forensics"]
+    },
+    {
+      "id": "gap-sample-custody-import",
+      "severity": "high",
+      "current_behavior": "sample, container, preservation, and chain-of-custody rows are not yet importable through the generic migration path",
+      "required_for": ["precast-industrial", "municipal-water", "materials-forensics"]
+    },
+    {
+      "id": "gap-analysis-result-import",
+      "severity": "high",
+      "current_behavior": "analysis services, result values, qualifiers, and method snapshots are documented in the fixture but not migrated by ImportForScope yet",
+      "required_for": ["precast-industrial", "municipal-water", "materials-forensics"]
+    },
+    {
+      "id": "gap-qc-batch-model",
+      "severity": "high",
+      "current_behavior": "QC batch expectations exist as dataset assertions; production-grade batch QC evaluation is not implemented",
+      "required_for": ["precast-industrial", "municipal-water", "materials-forensics"]
+    },
+    {
+      "id": "gap-report-package-artifacts",
+      "severity": "high",
+      "current_behavior": "COA, EDD, narrative, custody appendix, and attachment-manifest artifacts are not yet generated from migrated data",
+      "required_for": ["precast-industrial", "municipal-water", "materials-forensics"]
+    },
+    {
+      "id": "gap-subcontract-and-holding-time-controls",
+      "severity": "medium",
+      "current_behavior": "subcontract-blocking, microbiology holding-time, and release-precondition controls are expressed as checks but are not enforced by migration/report code",
+      "required_for": ["municipal-water", "materials-forensics"]
+    }
+  ],
+  "senaite_mapping": {
+    "Client": "Client organization/account plus billing/report recipient boundary; current import covers name/email only.",
+    "Contact": "Client contact/report-recipient role; currently represented as expected migration gap.",
+    "Sample": "SENAITE sample/AnalysisRequest specimen metadata including matrix, client sample id, received condition, and containers.",
+    "AnalysisRequest": "Requested analysis set expanded from profile or ad hoc services per sample.",
+    "AnalysisService": "Service/analyte with method, unit, qualifier, and reporting metadata snapshot.",
+    "Worksheet": "Batch assignment and analyst work queue for wet chemistry, metals, microbiology, or narrative review.",
+    "QC": "Method blank, duplicate, LCS, holding-time, subcontract, and reviewer acknowledgement controls.",
+    "Report": "COA, EDD, narrative, custody appendix, and attachment manifest outputs with release provenance.",
+    "ChainOfCustody": "Received/split/transferred/reviewed/reported custody event timeline with actor and timestamp expectations."
+  },
+  "migration_checks": [
+    {
+      "id": "clients-import-cleanly",
+      "assertions": ["all three synthetic clients import through ImportForScope", "legacy_id values remain available in import row provenance", "client reconciliation has zero missing and zero mismatched records"]
+    },
+    {
+      "id": "samples-remain-gap-until-import-supported",
+      "assertions": ["sample fixture rows include matrix, container, analyses, and custody expectations", "migration docs mark sample/custody import as high severity gap"]
+    },
+    {
+      "id": "qc-and-report-gaps-are-explicit",
+      "assertions": ["each workflow family has a QC batch", "each workflow family has expected report outputs", "dataset documents report package artifact gap"]
+    },
+    {
+      "id": "synthetic-boundary-check",
+      "assertions": ["fixture contains no customer names or domains", "all emails use reserved .example.test", "all legacy ids use SYN- prefix"]
+    }
+  ]
+}
