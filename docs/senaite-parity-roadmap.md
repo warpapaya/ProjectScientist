@@ -102,6 +102,7 @@ Needed:
 - COA generation with customer/lab branding, sample/result tables, qualifiers, signatures, pages, and attachments.
 - COC generation/attachment/package support.
 - Label generation with barcodes/QR, sample/container metadata.
+- Lab-test v1: deterministic text COA renderer/template path for synthetic Tindall/CENLA-style data, with fixture/hash coverage and immutable ReportArtifact release/audit integration. PDF remains intentionally deferred to avoid adding renderer dependencies before layout requirements harden.
 - Immutable ReportSnapshot/ReportArtifact with content hash, template version, data snapshot, reviewer/releaser attribution.
 - Amendment/supersession reports.
 

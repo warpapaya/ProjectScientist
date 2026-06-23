@@ -91,7 +91,8 @@ Everything important, basically:
 
 - Auth/RBAC/e-signatures.
 - Results entry, QC, worksheets, instruments, calculations, specs/limits.
-- COA/report rendering, COC package, labels.
+- COA/report rendering beyond the initial dependency-free synthetic text renderer.
+- COC package generation.
 - Client/contact/project hierarchy.
 - Attachments and custody chain.
 - Imports/exports and migration tooling.
