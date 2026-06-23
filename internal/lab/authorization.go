@@ -57,6 +57,7 @@ const (
 )
 
 var ErrAuthorizationDenied = errors.New("authorization denied")
+var errCommitAuthorizationDenied = errors.New("authorization denied after audit commit")
 
 var operationAllowedRoles = map[Operation][]Role{
 	OperationClientCreate:   {RoleAdmin, RoleLabManager},
@@ -149,6 +150,17 @@ func authorizeOperationTx(tx *sql.Tx, scope Scope, operation Operation, actor Ac
 		return false, nil
 	}
 	return true, nil
+}
+
+func requireAuthorizedOperationTx(tx *sql.Tx, scope Scope, operation Operation, actor ActorContext, resource AuditResource, details map[string]any) error {
+	allowed, err := authorizeOperationTx(tx, scope, operation, actor, resource, details)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return errCommitAuthorizationDenied
+	}
+	return nil
 }
 
 func normalizeDeniedResource(resource AuditResource, operation Operation) AuditResource {

@@ -1447,6 +1447,12 @@ func (s *Store) withTx(fn func(*sql.Tx) error) error {
 		return err
 	}
 	if err := fn(tx); err != nil {
+		if errors.Is(err, errCommitAuthorizationDenied) {
+			if commitErr := tx.Commit(); commitErr != nil {
+				return commitErr
+			}
+			return ErrAuthorizationDenied
+		}
 		_ = tx.Rollback()
 		return err
 	}
