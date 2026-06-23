@@ -19,7 +19,7 @@ func TestCatalogServiceAPIAndHTMLExposeBasicConfig(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}
+	app := attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))})
 
 	deptReq := formRequest("/api/catalog/departments", url.Values{"name": {"Metals"}, "sort_order": {"10"}})
 	deptRR := httptest.NewRecorder()
@@ -53,7 +53,8 @@ func TestCatalogServiceAPIAndHTMLExposeBasicConfig(t *testing.T) {
 		t.Fatalf("profile expected 201, got %d body=%s", profileRR.Code, profileRR.Body.String())
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := newDefaultSessionRequest(http.MethodGet, "/", nil)
+	addDefaultSessionCookie(req)
 	rr := httptest.NewRecorder()
 	app.index(rr, req)
 	if rr.Code != http.StatusOK {
@@ -73,7 +74,7 @@ func TestSampleReferenceAPIStateAndHTMLExposeCRUDVocabulary(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}
+	app := attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))})
 
 	createReq := formRequest("/api/sample-reference", url.Values{"kind": {string(lab.SampleReferenceMatrix)}, "name": {"Drinking Water"}, "code": {"DW"}, "sort_order": {"10"}, "active": {"true"}})
 	createRR := httptest.NewRecorder()
@@ -101,18 +102,18 @@ func TestSampleReferenceAPIStateAndHTMLExposeCRUDVocabulary(t *testing.T) {
 	}
 
 	stateRR := httptest.NewRecorder()
-	app.apiState(stateRR, httptest.NewRequest(http.MethodGet, "/api/state", nil))
+	app.apiState(stateRR, newDefaultSessionRequest(http.MethodGet, "/api/state", nil))
 	if stateRR.Code != http.StatusOK || !strings.Contains(stateRR.Body.String(), "Potable Water") {
 		t.Fatalf("api state missing sample reference, code=%d body=%s", stateRR.Code, stateRR.Body.String())
 	}
 
 	indexRR := httptest.NewRecorder()
-	app.index(indexRR, httptest.NewRequest(http.MethodGet, "/", nil))
+	app.index(indexRR, newDefaultSessionRequest(http.MethodGet, "/", nil))
 	if indexRR.Code != http.StatusOK || !strings.Contains(indexRR.Body.String(), "Sample reference data") || !strings.Contains(indexRR.Body.String(), "Potable Water") {
 		t.Fatalf("index missing sample reference vocabulary, code=%d body=%s", indexRR.Code, indexRR.Body.String())
 	}
 
-	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/sample-reference/"+created.ID, nil)
+	deleteReq := newDefaultSessionRequest(http.MethodDelete, "/api/sample-reference/"+created.ID, nil)
 	deleteReq.Header.Set("Accept", "application/json")
 	deleteReq.Header.Set("X-PSC-Request-ID", "catalog-http-test")
 	deleteRR := httptest.NewRecorder()
@@ -127,6 +128,7 @@ func TestSampleReferenceAPIStateAndHTMLExposeCRUDVocabulary(t *testing.T) {
 
 func formRequest(path string, values url.Values) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(values.Encode()))
+	addDefaultSessionCookie(req)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-PSC-Request-ID", "catalog-http-test")

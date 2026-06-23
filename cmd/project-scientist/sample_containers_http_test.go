@@ -19,7 +19,7 @@ func TestSampleContainerHTTPAndHTMLCreateView(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}
+	app := attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))})
 	actor := lab.MustActorContext(lab.ActorContextInput{UserID: "http-container", RequestID: "http-container", CorrelationID: "http-container", TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleLabManager)}}}, Roles: []string{string(lab.RoleLabManager)}})
 	client, _ := store.CreateClient("Container HTTP Client", "container-http@example.test", actor)
 	containerRef, _ := store.CreateSampleReferenceItem(lab.SampleReferenceItemInput{Kind: lab.SampleReferenceContainer, Code: "HDPE", Name: "HDPE Bottle", Active: true}, actor)
@@ -29,7 +29,7 @@ func TestSampleContainerHTTPAndHTMLCreateView(t *testing.T) {
 	method, _ := store.CreateCatalogMethod(lab.CatalogMethodInput{Name: "EPA 200.8"}, actor)
 
 	indexRR := httptest.NewRecorder()
-	app.index(indexRR, httptest.NewRequest(http.MethodGet, "/", nil))
+	app.index(indexRR, newDefaultSessionRequest(http.MethodGet, "/", nil))
 	if body := indexRR.Body.String(); !strings.Contains(body, "name=\"container_volume\"") || !strings.Contains(body, "name=\"aliquot_department_id\"") || !strings.Contains(body, "Containers / aliquots") {
 		t.Fatalf("intake page missing container/aliquot create/view affordances:\n%s", body)
 	}
@@ -61,7 +61,7 @@ func TestSampleContainerHTTPAndHTMLCreateView(t *testing.T) {
 	}
 
 	viewRR := httptest.NewRecorder()
-	app.index(viewRR, httptest.NewRequest(http.MethodGet, "/", nil))
+	app.index(viewRR, newDefaultSessionRequest(http.MethodGet, "/", nil))
 	if body := viewRR.Body.String(); !strings.Contains(body, "500 mL") || !strings.Contains(body, "dissolved metals") {
 		t.Fatalf("workflow view missing container/aliquot details:\n%s", body)
 	}

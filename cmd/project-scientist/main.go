@@ -25,6 +25,8 @@ type app struct {
 	tmpl             *template.Template
 	demoResetEnabled bool
 	fixturePath      string
+	sessions         map[string]authenticatedSession
+	now              func() time.Time
 }
 
 type pageData struct {
@@ -122,12 +124,14 @@ func serve() error {
 		tmpl:             template.Must(template.ParseFiles("web/templates/index.html")),
 		demoResetEnabled: strings.EqualFold(getenv("PSC_ENABLE_DEMO_RESET", "false"), "true"),
 		fixturePath:      getenv("PSC_SYNTHETIC_FIXTURE_PATH", "/app/fixtures/mvp_synthetic_lab.json"),
+		sessions:         configuredInternalSessions(),
+		now:              time.Now,
 	}
 	log.Printf("Project Scientist listening on %s", addr)
 	return http.ListenAndServe(addr, securityHeaders(application.routes()))
 }
 
-func (a *app) routes() *http.ServeMux {
+func (a *app) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", a.index)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
@@ -160,7 +164,7 @@ func (a *app) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/sample-reference/", a.updateSampleReferenceItem)
 	mux.HandleFunc("DELETE /api/sample-reference/", a.deleteSampleReferenceItem)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
-	return mux
+	return a.requireSessionBoundary(mux)
 }
 
 func auditVerify(args []string, stdout, stderr io.Writer) error {
@@ -557,23 +561,21 @@ func (a *app) index(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	scope := scopeFromRequest(r)
-	if !httpActorCanReadScope(r, scope) {
-		http.Error(w, "request scope is not bound to authenticated actor", http.StatusForbidden)
+	scope, actor, ok := a.requireAuthenticatedRequest(w, r)
+	if !ok {
 		return
 	}
-	if err := a.tmpl.Execute(w, a.pageData(scope, 20, actor(r))); err != nil {
+	if err := a.tmpl.Execute(w, a.pageData(scope, 20, actor)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
 func (a *app) apiState(w http.ResponseWriter, r *http.Request) {
-	scope := scopeFromRequest(r)
-	if !httpActorCanReadScope(r, scope) {
-		http.Error(w, "request scope is not bound to authenticated actor", http.StatusForbidden)
+	scope, actor, ok := a.requireAuthenticatedRequest(w, r)
+	if !ok {
 		return
 	}
-	writeJSON(w, a.pageData(scope, 50, actor(r)), http.StatusOK)
+	writeJSON(w, a.pageData(scope, 50, actor), http.StatusOK)
 }
 
 func (a *app) pageData(scope lab.Scope, auditLimit int, actor lab.ActorContext) pageData {
@@ -640,7 +642,10 @@ func (a *app) createClient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	client, err := a.store.CreateClientForScope(scopeFromRequest(r), r.FormValue("name"), r.FormValue("email"), actor(r))
+	if _, _, ok := a.requireAuthenticatedRequest(w, r); !ok {
+		return
+	}
+	client, err := a.store.CreateClientForScope(a.sessionScope(r), r.FormValue("name"), r.FormValue("email"), a.sessionActor(r))
 	if err != nil {
 		writeMutationError(w, err)
 		return
@@ -649,7 +654,7 @@ func (a *app) createClient(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, client, http.StatusCreated)
 		return
 	}
-	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (a *app) createSite(w http.ResponseWriter, r *http.Request) {
@@ -657,7 +662,7 @@ func (a *app) createSite(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	site, err := a.store.CreateSiteForScope(scopeFromRequest(r), lab.SiteInput{ClientID: r.FormValue("client_id"), Name: r.FormValue("name"), Division: r.FormValue("division"), Address: r.FormValue("address")}, actor(r))
+	site, err := a.store.CreateSiteForScope(a.sessionScope(r), lab.SiteInput{ClientID: r.FormValue("client_id"), Name: r.FormValue("name"), Division: r.FormValue("division"), Address: r.FormValue("address")}, a.sessionActor(r))
 	writeMutationResponse(w, r, site, err)
 }
 
@@ -666,7 +671,7 @@ func (a *app) createContact(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	contact, err := a.store.CreateContactForScope(scopeFromRequest(r), lab.ContactInput{ClientID: r.FormValue("client_id"), SiteID: r.FormValue("site_id"), Name: r.FormValue("name"), Email: r.FormValue("email"), Phone: r.FormValue("phone")}, actor(r))
+	contact, err := a.store.CreateContactForScope(a.sessionScope(r), lab.ContactInput{ClientID: r.FormValue("client_id"), SiteID: r.FormValue("site_id"), Name: r.FormValue("name"), Email: r.FormValue("email"), Phone: r.FormValue("phone")}, a.sessionActor(r))
 	writeMutationResponse(w, r, contact, err)
 }
 
@@ -675,7 +680,7 @@ func (a *app) assignContactRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	role, err := a.store.AssignContactRoleForScope(scopeFromRequest(r), lab.ContactRoleInput{ContactID: r.FormValue("contact_id"), Role: r.FormValue("role")}, actor(r))
+	role, err := a.store.AssignContactRoleForScope(a.sessionScope(r), lab.ContactRoleInput{ContactID: r.FormValue("contact_id"), Role: r.FormValue("role")}, a.sessionActor(r))
 	writeMutationResponse(w, r, role, err)
 }
 
@@ -684,7 +689,7 @@ func (a *app) createProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	project, err := a.store.CreateProjectForScope(scopeFromRequest(r), lab.ProjectInput{ClientID: r.FormValue("client_id"), SiteID: r.FormValue("site_id"), Name: r.FormValue("name"), WorkOrder: r.FormValue("work_order"), DefaultMatrix: r.FormValue("default_matrix"), DefaultTests: splitTests(r.FormValue("default_tests"))}, actor(r))
+	project, err := a.store.CreateProjectForScope(a.sessionScope(r), lab.ProjectInput{ClientID: r.FormValue("client_id"), SiteID: r.FormValue("site_id"), Name: r.FormValue("name"), WorkOrder: r.FormValue("work_order"), DefaultMatrix: r.FormValue("default_matrix"), DefaultTests: splitTests(r.FormValue("default_tests"))}, a.sessionActor(r))
 	writeMutationResponse(w, r, project, err)
 }
 
@@ -693,7 +698,7 @@ func (a *app) upsertClientDefaults(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	defaults, err := a.store.UpsertClientDefaultsForScope(scopeFromRequest(r), lab.ClientDefaultsInput{ClientID: r.FormValue("client_id"), ReportTemplate: r.FormValue("report_template"), InvoiceEmail: r.FormValue("invoice_email"), DefaultMatrix: r.FormValue("default_matrix"), DefaultTests: splitTests(r.FormValue("default_tests"))}, actor(r))
+	defaults, err := a.store.UpsertClientDefaultsForScope(a.sessionScope(r), lab.ClientDefaultsInput{ClientID: r.FormValue("client_id"), ReportTemplate: r.FormValue("report_template"), InvoiceEmail: r.FormValue("invoice_email"), DefaultMatrix: r.FormValue("default_matrix"), DefaultTests: splitTests(r.FormValue("default_tests"))}, a.sessionActor(r))
 	writeMutationResponse(w, r, defaults, err)
 }
 
@@ -702,7 +707,7 @@ func (a *app) createSampleIntakeTemplate(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	tmpl, err := a.store.CreateSampleIntakeTemplateForScope(scopeFromRequest(r), lab.SampleIntakeTemplateInput{
+	tmpl, err := a.store.CreateSampleIntakeTemplateForScope(a.sessionScope(r), lab.SampleIntakeTemplateInput{
 		Name:                r.FormValue("name"),
 		ClientID:            r.FormValue("client_id"),
 		ProjectID:           r.FormValue("project_id"),
@@ -717,7 +722,7 @@ func (a *app) createSampleIntakeTemplate(w http.ResponseWriter, r *http.Request)
 		AnalysisProfileIDs:  splitIDs(r.Form["analysis_profile_ids"]),
 		AnalysisServiceIDs:  splitIDs(r.Form["analysis_service_ids"]),
 		Tests:               splitTests(r.FormValue("tests")),
-	}, actor(r))
+	}, a.sessionActor(r))
 	writeMutationResponse(w, r, tmpl, err)
 }
 
@@ -748,7 +753,7 @@ func (a *app) createSamplesFromTemplate(w http.ResponseWriter, r *http.Request) 
 			rows = append(rows, row)
 		}
 	}
-	samples, err := a.store.CreateSamplesFromTemplateForScope(scopeFromRequest(r), templateID, rows, actor(r))
+	samples, err := a.store.CreateSamplesFromTemplateForScope(a.sessionScope(r), templateID, rows, a.sessionActor(r))
 	writeMutationResponse(w, r, samples, err)
 }
 
@@ -757,7 +762,7 @@ func (a *app) createResult(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result, err := a.store.CreateResultForScope(scopeFromRequest(r), input, actor(r))
+	result, err := a.store.CreateResultForScope(a.sessionScope(r), input, a.sessionActor(r))
 	writeMutationResponse(w, r, result, err)
 }
 
@@ -777,7 +782,7 @@ func (a *app) resultAction(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		result, err := a.store.ReviewResultForScope(scopeFromRequest(r), resultID, lab.ResultReviewInput{Decision: lab.ResultDecision(r.FormValue("decision")), Comments: r.FormValue("review_comments"), EnforceReviewerSeparation: parseBool(r.FormValue("enforce_reviewer_separation"))}, actor(r))
+		result, err := a.store.ReviewResultForScope(a.sessionScope(r), resultID, lab.ResultReviewInput{Decision: lab.ResultDecision(r.FormValue("decision")), Comments: r.FormValue("review_comments"), EnforceReviewerSeparation: parseBool(r.FormValue("enforce_reviewer_separation"))}, a.sessionActor(r))
 		writeMutationResponse(w, r, result, err)
 		return
 	}
@@ -791,7 +796,7 @@ func (a *app) resultAction(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		result, err := a.store.ReopenResultForScope(scopeFromRequest(r), resultID, r.FormValue("reason"), actor(r))
+		result, err := a.store.ReopenResultForScope(a.sessionScope(r), resultID, r.FormValue("reason"), a.sessionActor(r))
 		writeMutationResponse(w, r, result, err)
 		return
 	}
@@ -803,7 +808,7 @@ func (a *app) resultAction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result, err := a.store.UpdateResultForScope(scopeFromRequest(r), path, input, actor(r))
+	result, err := a.store.UpdateResultForScope(a.sessionScope(r), path, input, a.sessionActor(r))
 	writeMutationResponse(w, r, result, err)
 }
 
@@ -863,7 +868,7 @@ func writeMutationResponse(w http.ResponseWriter, r *http.Request, value any, er
 		writeJSON(w, value, http.StatusCreated)
 		return
 	}
-	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (a *app) createSample(w http.ResponseWriter, r *http.Request) {
@@ -892,7 +897,7 @@ func (a *app) createSample(w http.ResponseWriter, r *http.Request) {
 		Tests:               splitTests(r.FormValue("tests")),
 		Containers:          sampleContainerInputsFromRequest(r),
 	}
-	sample, err := a.store.CreateSampleForScope(scopeFromRequest(r), input, actor(r))
+	sample, err := a.store.CreateSampleForScope(a.sessionScope(r), input, a.sessionActor(r))
 	if err != nil {
 		writeMutationError(w, err)
 		return
@@ -946,7 +951,7 @@ func (a *app) sampleLabelArtifact(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	artifact, err := a.store.GenerateSampleLabelArtifactForScope(scopeFromRequest(r), sampleID, actor(r))
+	artifact, err := a.store.GenerateSampleLabelArtifactForScope(a.sessionScope(r), sampleID, a.sessionActor(r))
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, lab.ErrAuthorizationDenied) {
@@ -968,7 +973,7 @@ func (a *app) transitionSample(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := a.store.TransitionSampleForScope(scopeFromRequest(r), sampleID, lab.SampleStatus(r.FormValue("status")), actor(r)); err != nil {
+	if err := a.store.TransitionSampleForScope(a.sessionScope(r), sampleID, lab.SampleStatus(r.FormValue("status")), a.sessionActor(r)); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -976,7 +981,7 @@ func (a *app) transitionSample(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"status": "ok"}, http.StatusOK)
 		return
 	}
-	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (a *app) recordCustodyEvent(w http.ResponseWriter, r *http.Request) {
@@ -993,7 +998,7 @@ func (a *app) recordCustodyEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	event, err := a.store.RecordCustodyEventForScope(scopeFromRequest(r), lab.CustodyEventInput{SampleID: sampleID, Type: lab.CustodyEventType(r.FormValue("custody_type")), Location: r.FormValue("custody_location"), Reason: r.FormValue("custody_reason"), OccurredAt: parseOptionalRequestTime(r.FormValue("custody_occurred_at"))}, actor(r))
+	event, err := a.store.RecordCustodyEventForScope(a.sessionScope(r), lab.CustodyEventInput{SampleID: sampleID, Type: lab.CustodyEventType(r.FormValue("custody_type")), Location: r.FormValue("custody_location"), Reason: r.FormValue("custody_reason"), OccurredAt: parseOptionalRequestTime(r.FormValue("custody_occurred_at"))}, a.sessionActor(r))
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, lab.ErrAuthorizationDenied) {
@@ -1006,7 +1011,7 @@ func (a *app) recordCustodyEvent(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, event, http.StatusCreated)
 		return
 	}
-	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (a *app) generateCOCPackage(w http.ResponseWriter, r *http.Request) {
@@ -1023,7 +1028,7 @@ func (a *app) generateCOCPackage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	pkg, err := a.store.GenerateCOCPackageForScope(scopeFromRequest(r), lab.COCPackageInput{SampleID: sampleID, PackageFormat: r.FormValue("package_format"), Attachments: cocPackageAttachmentsFromRequest(r)}, actor(r))
+	pkg, err := a.store.GenerateCOCPackageForScope(a.sessionScope(r), lab.COCPackageInput{SampleID: sampleID, PackageFormat: r.FormValue("package_format"), Attachments: cocPackageAttachmentsFromRequest(r)}, a.sessionActor(r))
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, lab.ErrAuthorizationDenied) {
@@ -1036,7 +1041,7 @@ func (a *app) generateCOCPackage(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, pkg, http.StatusCreated)
 		return
 	}
-	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (a *app) previewReportArtifact(w http.ResponseWriter, r *http.Request) {
@@ -1049,9 +1054,8 @@ func (a *app) previewReportArtifact(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	scope := scopeFromRequest(r)
-	if !httpActorCanReadScope(r, scope) {
-		http.Error(w, "request scope is not bound to authenticated actor", http.StatusForbidden)
+	scope, _, ok := a.requireAuthenticatedRequest(w, r)
+	if !ok {
 		return
 	}
 	artifact, err := a.store.PreviewCOAArtifactForScope(scope, lab.COAGenerationInput{SampleID: sampleID, Template: defaultCOATemplateFromRequest(r)})
@@ -1078,7 +1082,7 @@ func (a *app) releaseReportArtifact(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	released, err := a.store.GenerateCOAReportArtifactForScope(scopeFromRequest(r), lab.COAGenerationInput{SampleID: sampleID, Template: defaultCOATemplateFromRequest(r)}, actor(r))
+	released, err := a.store.GenerateCOAReportArtifactForScope(a.sessionScope(r), lab.COAGenerationInput{SampleID: sampleID, Template: defaultCOATemplateFromRequest(r)}, a.sessionActor(r))
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, lab.ErrAuthorizationDenied) {
@@ -1091,7 +1095,7 @@ func (a *app) releaseReportArtifact(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, released, http.StatusCreated)
 		return
 	}
-	http.Redirect(w, r, scopedHome(scopeFromRequest(r))+"#report-release", http.StatusSeeOther)
+	http.Redirect(w, r, "/#report-release", http.StatusSeeOther)
 }
 
 func defaultCOATemplateFromRequest(r *http.Request) lab.COATemplate {
@@ -1121,9 +1125,8 @@ func (a *app) reportArtifactDownload(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	scope := scopeFromRequest(r)
-	if !httpActorCanReadScope(r, scope) {
-		http.Error(w, "request scope is not bound to authenticated actor", http.StatusForbidden)
+	scope, _, ok := a.requireAuthenticatedRequest(w, r)
+	if !ok {
 		return
 	}
 	artifact, ok := a.store.ReportArtifactForScope(scope, id)
@@ -1146,9 +1149,8 @@ func (a *app) cocPackageDownload(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	scope := scopeFromRequest(r)
-	if !httpActorCanReadScope(r, scope) {
-		http.Error(w, "request scope is not bound to authenticated actor", http.StatusForbidden)
+	scope, _, ok := a.requireAuthenticatedRequest(w, r)
+	if !ok {
 		return
 	}
 	pkg, ok := a.store.COCPackageForScope(scope, id)
@@ -1192,7 +1194,7 @@ func (a *app) createWorksheet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	worksheet, err := a.store.CreateWorksheetForScope(scopeFromRequest(r), lab.CreateWorksheetInput{AnalysisRequestLineIDs: splitIDs(r.Form["analysis_request_line_ids"]), BatchID: r.FormValue("batch_id"), AnalystID: r.FormValue("analyst_id")}, actor(r))
+	worksheet, err := a.store.CreateWorksheetForScope(a.sessionScope(r), lab.CreateWorksheetInput{AnalysisRequestLineIDs: splitIDs(r.Form["analysis_request_line_ids"]), BatchID: r.FormValue("batch_id"), AnalystID: r.FormValue("analyst_id")}, a.sessionActor(r))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -1201,7 +1203,7 @@ func (a *app) createWorksheet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, worksheet, http.StatusCreated)
 		return
 	}
-	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (a *app) routeWorksheetMutation(w http.ResponseWriter, r *http.Request) {
@@ -1219,11 +1221,11 @@ func (a *app) routeWorksheetMutation(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch {
 	case len(parts) == 2 && parts[1] == "assign":
-		err = a.store.AssignWorksheetAnalystForScope(scopeFromRequest(r), worksheetID, r.FormValue("analyst_id"), actor(r))
+		err = a.store.AssignWorksheetAnalystForScope(a.sessionScope(r), worksheetID, r.FormValue("analyst_id"), a.sessionActor(r))
 	case len(parts) == 2 && parts[1] == "transition":
-		err = a.store.TransitionWorksheetForScope(scopeFromRequest(r), worksheetID, lab.WorksheetStatus(r.FormValue("status")), actor(r))
+		err = a.store.TransitionWorksheetForScope(a.sessionScope(r), worksheetID, lab.WorksheetStatus(r.FormValue("status")), a.sessionActor(r))
 	case len(parts) == 4 && parts[1] == "lines" && parts[3] == "remove":
-		err = a.store.RemoveWorksheetLineForScope(scopeFromRequest(r), worksheetID, parts[2], actor(r))
+		err = a.store.RemoveWorksheetLineForScope(a.sessionScope(r), worksheetID, parts[2], a.sessionActor(r))
 	default:
 		http.NotFound(w, r)
 		return
@@ -1236,7 +1238,7 @@ func (a *app) routeWorksheetMutation(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"status": "ok"}, http.StatusOK)
 		return
 	}
-	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (a *app) createCatalogDepartment(w http.ResponseWriter, r *http.Request) {
@@ -1244,7 +1246,7 @@ func (a *app) createCatalogDepartment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	department, err := a.store.CreateCatalogDepartmentForScope(scopeFromRequest(r), lab.CatalogDepartmentInput{Name: r.FormValue("name"), SortOrder: parseInt(r.FormValue("sort_order"))}, actor(r))
+	department, err := a.store.CreateCatalogDepartmentForScope(a.sessionScope(r), lab.CatalogDepartmentInput{Name: r.FormValue("name"), SortOrder: parseInt(r.FormValue("sort_order"))}, a.sessionActor(r))
 	writeCatalogResult(w, r, department, err)
 }
 
@@ -1253,7 +1255,7 @@ func (a *app) createCatalogUnit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	unit, err := a.store.CreateCatalogUnitForScope(scopeFromRequest(r), lab.CatalogUnitInput{Name: r.FormValue("name"), Symbol: r.FormValue("symbol")}, actor(r))
+	unit, err := a.store.CreateCatalogUnitForScope(a.sessionScope(r), lab.CatalogUnitInput{Name: r.FormValue("name"), Symbol: r.FormValue("symbol")}, a.sessionActor(r))
 	writeCatalogResult(w, r, unit, err)
 }
 
@@ -1262,7 +1264,7 @@ func (a *app) createCatalogMethod(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	method, err := a.store.CreateCatalogMethodForScope(scopeFromRequest(r), lab.CatalogMethodInput{Name: r.FormValue("name"), Description: r.FormValue("description")}, actor(r))
+	method, err := a.store.CreateCatalogMethodForScope(a.sessionScope(r), lab.CatalogMethodInput{Name: r.FormValue("name"), Description: r.FormValue("description")}, a.sessionActor(r))
 	writeCatalogResult(w, r, method, err)
 }
 
@@ -1271,7 +1273,7 @@ func (a *app) createCatalogAnalyte(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	analyte, err := a.store.CreateCatalogAnalyteForScope(scopeFromRequest(r), lab.CatalogAnalyteInput{Name: r.FormValue("name"), DefaultUnitID: r.FormValue("default_unit_id")}, actor(r))
+	analyte, err := a.store.CreateCatalogAnalyteForScope(a.sessionScope(r), lab.CatalogAnalyteInput{Name: r.FormValue("name"), DefaultUnitID: r.FormValue("default_unit_id")}, a.sessionActor(r))
 	writeCatalogResult(w, r, analyte, err)
 }
 
@@ -1280,7 +1282,7 @@ func (a *app) createAnalysisService(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	service, err := a.store.CreateAnalysisServiceForScope(scopeFromRequest(r), lab.AnalysisServiceInput{Name: r.FormValue("name"), DepartmentID: r.FormValue("department_id"), MethodID: r.FormValue("method_id"), AnalyteID: r.FormValue("analyte_id"), UnitID: r.FormValue("unit_id"), SortOrder: parseInt(r.FormValue("sort_order"))}, actor(r))
+	service, err := a.store.CreateAnalysisServiceForScope(a.sessionScope(r), lab.AnalysisServiceInput{Name: r.FormValue("name"), DepartmentID: r.FormValue("department_id"), MethodID: r.FormValue("method_id"), AnalyteID: r.FormValue("analyte_id"), UnitID: r.FormValue("unit_id"), SortOrder: parseInt(r.FormValue("sort_order"))}, a.sessionActor(r))
 	writeCatalogResult(w, r, service, err)
 }
 
@@ -1289,7 +1291,7 @@ func (a *app) createAnalysisProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	profile, err := a.store.CreateAnalysisProfileForScope(scopeFromRequest(r), lab.AnalysisProfileInput{Name: r.FormValue("name"), ServiceIDs: splitIDs(r.Form["service_ids"])}, actor(r))
+	profile, err := a.store.CreateAnalysisProfileForScope(a.sessionScope(r), lab.AnalysisProfileInput{Name: r.FormValue("name"), ServiceIDs: splitIDs(r.Form["service_ids"])}, a.sessionActor(r))
 	writeCatalogResult(w, r, profile, err)
 }
 
@@ -1298,7 +1300,7 @@ func (a *app) createSampleReferenceItem(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	item, err := a.store.CreateSampleReferenceItemForScope(scopeFromRequest(r), sampleReferenceInputFromRequest(r), actor(r))
+	item, err := a.store.CreateSampleReferenceItemForScope(a.sessionScope(r), sampleReferenceInputFromRequest(r), a.sessionActor(r))
 	writeCatalogResult(w, r, item, err)
 }
 
@@ -1312,7 +1314,7 @@ func (a *app) updateSampleReferenceItem(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	item, err := a.store.UpdateSampleReferenceItemForScope(scopeFromRequest(r), id, sampleReferenceInputFromRequest(r), actor(r))
+	item, err := a.store.UpdateSampleReferenceItemForScope(a.sessionScope(r), id, sampleReferenceInputFromRequest(r), a.sessionActor(r))
 	writeCatalogResult(w, r, item, err)
 }
 
@@ -1322,7 +1324,7 @@ func (a *app) deleteSampleReferenceItem(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
-	if err := a.store.DeleteSampleReferenceItemForScope(scopeFromRequest(r), id, actor(r)); err != nil {
+	if err := a.store.DeleteSampleReferenceItemForScope(a.sessionScope(r), id, a.sessionActor(r)); err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, lab.ErrAuthorizationDenied) {
 			status = http.StatusForbidden
@@ -1430,6 +1432,152 @@ func parseOptionalRequestTime(raw string) time.Time {
 	return time.Time{}
 }
 
+const sessionCookieName = "psc_internal_session"
+
+type authenticatedSession struct {
+	Actor     lab.ActorContext
+	Scope     lab.Scope
+	ExpiresAt time.Time
+}
+
+func configuredInternalSessions() map[string]authenticatedSession {
+	token := strings.TrimSpace(os.Getenv("PSC_INTERNAL_SESSION_TOKEN"))
+	if token == "" {
+		return map[string]authenticatedSession{}
+	}
+	tenantID := strings.TrimSpace(getenv("PSC_INTERNAL_SESSION_TENANT_ID", lab.DefaultTenantID))
+	labID := strings.TrimSpace(getenv("PSC_INTERNAL_SESSION_LAB_ID", lab.DefaultLabID))
+	userID := strings.TrimSpace(getenv("PSC_INTERNAL_SESSION_USER", "lab-dev"))
+	roles := []string{string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser)}
+	ttl := 12 * time.Hour
+	if rawTTL := strings.TrimSpace(os.Getenv("PSC_INTERNAL_SESSION_TTL")); rawTTL != "" {
+		if parsed, err := time.ParseDuration(rawTTL); err == nil {
+			ttl = parsed
+		}
+	}
+	return map[string]authenticatedSession{
+		token: {
+			Actor: lab.MustActorContext(lab.ActorContextInput{
+				UserID:            userID,
+				DisplayName:       userID,
+				AuthProvider:      "internal-session",
+				TenantMemberships: []lab.TenantMembership{{TenantID: tenantID, Roles: roles}},
+				Roles:             roles,
+				RequestID:         "internal-session-bootstrap",
+				CorrelationID:     "internal-session-bootstrap",
+			}),
+			Scope:     lab.Scope{TenantID: tenantID, LabID: labID},
+			ExpiresAt: time.Now().Add(ttl),
+		},
+	}
+}
+
+func (a *app) requireSessionBoundary(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/api/demo/reset" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if _, _, ok := a.requireAuthenticatedRequest(w, r); !ok {
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (a *app) requireAuthenticatedRequest(w http.ResponseWriter, r *http.Request) (lab.Scope, lab.ActorContext, bool) {
+	session, err := a.currentSession(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return lab.Scope{}, lab.ActorContext{}, false
+	}
+	if requested, ok := requestedScope(r); ok && (requested.TenantID != session.Scope.TenantID || requested.LabID != session.Scope.LabID) {
+		http.Error(w, "request scope is not bound to authenticated session", http.StatusForbidden)
+		return lab.Scope{}, lab.ActorContext{}, false
+	}
+	return session.Scope, a.sessionActor(r), true
+}
+
+func (a *app) currentSession(r *http.Request) (authenticatedSession, error) {
+	if a == nil || len(a.sessions) == 0 {
+		return authenticatedSession{}, errors.New("authenticated session is required")
+	}
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return authenticatedSession{}, errors.New("authenticated session is required")
+	}
+	session, ok := a.sessions[strings.TrimSpace(cookie.Value)]
+	if !ok {
+		return authenticatedSession{}, errors.New("authenticated session is invalid")
+	}
+	now := time.Now
+	if a.now != nil {
+		now = a.now
+	}
+	if !session.ExpiresAt.IsZero() && !now().Before(session.ExpiresAt) {
+		return authenticatedSession{}, errors.New("authenticated session is expired")
+	}
+	if strings.TrimSpace(session.Scope.TenantID) == "" || strings.TrimSpace(session.Scope.LabID) == "" {
+		return authenticatedSession{}, errors.New("authenticated session scope is invalid")
+	}
+	return session, nil
+}
+
+func requestedScope(r *http.Request) (lab.Scope, bool) {
+	scope := lab.Scope{}
+	selected := false
+	if tenantID := strings.TrimSpace(r.Header.Get("X-PSC-Tenant-ID")); tenantID != "" {
+		scope.TenantID = tenantID
+		selected = true
+	} else if tenantID := strings.TrimSpace(r.FormValue("tenant_id")); tenantID != "" {
+		scope.TenantID = tenantID
+		selected = true
+	} else if tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id")); tenantID != "" {
+		scope.TenantID = tenantID
+		selected = true
+	}
+	if labID := strings.TrimSpace(r.Header.Get("X-PSC-Lab-ID")); labID != "" {
+		scope.LabID = labID
+		selected = true
+	} else if labID := strings.TrimSpace(r.FormValue("lab_id")); labID != "" {
+		scope.LabID = labID
+		selected = true
+	} else if labID := strings.TrimSpace(r.URL.Query().Get("lab_id")); labID != "" {
+		scope.LabID = labID
+		selected = true
+	}
+	if scope.TenantID == "" {
+		scope.TenantID = lab.DefaultTenantID
+	}
+	if scope.LabID == "" {
+		scope.LabID = lab.DefaultLabID
+	}
+	return scope, selected
+}
+
+func (a *app) sessionScope(r *http.Request) lab.Scope {
+	if session, err := a.currentSession(r); err == nil {
+		return session.Scope
+	}
+	return lab.Scope{TenantID: "unauthenticated-request", LabID: lab.DefaultLabID}
+}
+
+func (a *app) sessionActor(r *http.Request) lab.ActorContext {
+	if session, err := a.currentSession(r); err == nil {
+		actor := session.Actor
+		actor.RequestID = requestID(r)
+		actor.CorrelationID = requestID(r)
+		return actor
+	}
+	return lab.MustActorContext(lab.ActorContextInput{
+		UserID:        "unauthenticated-http-request",
+		DisplayName:   "unauthenticated-http-request",
+		AuthProvider:  "none",
+		RequestID:     requestID(r),
+		CorrelationID: requestID(r),
+	})
+}
+
 func demoResetActor(r *http.Request) lab.ActorContext {
 	requestID := requestID(r)
 	return lab.MustActorContext(lab.ActorContextInput{
@@ -1488,8 +1636,8 @@ func scopeFromRequest(r *http.Request) lab.Scope {
 	return scope
 }
 
-func httpActorCanReadScope(r *http.Request, scope lab.Scope) bool {
-	readActor := actor(r)
+func (a *app) httpActorCanReadScope(r *http.Request, scope lab.Scope) bool {
+	readActor := a.sessionActor(r)
 	for _, membership := range readActor.TenantMemberships {
 		if membership.TenantID == scope.TenantID && strings.TrimSpace(scope.LabID) == lab.DefaultLabID {
 			return true

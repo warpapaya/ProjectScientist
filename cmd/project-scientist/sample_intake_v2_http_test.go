@@ -34,7 +34,7 @@ func TestSampleIntakeV2HTTPAndHTMLLowClickFlow(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}
+	app := attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))})
 	actor := lab.MustActorContext(lab.ActorContextInput{UserID: "http-fixture", RequestID: "http-fixture", CorrelationID: "http-fixture", TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleLabManager)}}}, Roles: []string{string(lab.RoleLabManager)}})
 
 	client, _ := store.CreateClient("HTTP Intake Client", "http@example.test", actor)
@@ -50,7 +50,7 @@ func TestSampleIntakeV2HTTPAndHTMLLowClickFlow(t *testing.T) {
 	profile, _ := store.CreateAnalysisProfile(lab.AnalysisProfileInput{Name: "Routine Water", ServiceIDs: []string{ph.ID, alk.ID}}, actor)
 
 	indexRR := httptest.NewRecorder()
-	app.index(indexRR, httptest.NewRequest(http.MethodGet, "/", nil))
+	app.index(indexRR, newDefaultSessionRequest(http.MethodGet, "/", nil))
 	if indexRR.Code != http.StatusOK {
 		t.Fatalf("index status=%d body=%s", indexRR.Code, indexRR.Body.String())
 	}
@@ -102,7 +102,7 @@ func TestSampleIntakeTemplateHTTPBulkCreatesSamples(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}
+	app := attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))})
 	actor := lab.MustActorContext(lab.ActorContextInput{UserID: "bulk-http", RequestID: "bulk-http", CorrelationID: "bulk-http", TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleLabManager)}}}, Roles: []string{string(lab.RoleLabManager)}})
 
 	client, _ := store.CreateClient("HTTP Bulk Client", "bulk-http@example.test", actor)
@@ -131,6 +131,7 @@ func TestSampleIntakeTemplateHTTPBulkCreatesSamples(t *testing.T) {
 	payload := []lab.SampleTemplateRowInput{{ClientSampleID: "FIELD-A", LabSampleID: "LAB-A"}, {ClientSampleID: "FIELD-B", LabSampleID: "LAB-B", Comments: "second row"}}
 	bodyBytes, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, "/api/sample-intake-templates/"+tmpl.ID+"/samples", bytes.NewReader(bodyBytes))
+	addDefaultSessionCookie(req)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-PSC-Tenant-ID", lab.DefaultTenantID)
