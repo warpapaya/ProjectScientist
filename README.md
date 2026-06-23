@@ -49,7 +49,7 @@ make docker-test
 make docker-smoke
 ```
 
-`make docker-test` uses an isolated `<COMPOSE_PROJECT_NAME>-test` Compose project and clone-specific default image tags, then cleans the Compose project up on exit. `make docker-smoke` uses an isolated `<COMPOSE_PROJECT_NAME>-smoke` Compose project on loopback port `18097`, verifies the seeded API state against an in-container temp data directory, then stops the smoke container/network. Preserved development volumes are left in place and are not silently deleted.
+`make docker-test` uses an isolated `<COMPOSE_PROJECT_NAME>-test` Compose project and clone-specific default image tags, then cleans the Compose project up on exit. `make docker-smoke` uses an isolated `<COMPOSE_PROJECT_NAME>-smoke` Compose project on loopback port `18097`, verifies the seeded API state against an in-container temp data directory, runs the MVP vertical-slice command against the smoke project volume, then removes that smoke-only container/network/volume so immediate reruns start cleanly. Preserved development volumes are left in place and are not silently deleted.
 
 Seed/reset deterministic synthetic local-only data through the running dev API:
 
