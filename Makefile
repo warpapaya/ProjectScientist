@@ -10,10 +10,12 @@ SMOKE_BASE_URL ?= http://127.0.0.1:$(SMOKE_PORT)
 PSC_IMAGE_TAG ?= project-scientist:$(WORKTREE_SLUG)-dev-local
 PSC_TEST_IMAGE_TAG ?= project-scientist:$(WORKTREE_SLUG)-test-local
 DOCKER_GO_PARALLEL ?= 1
+PSC_ENABLE_DEMO_RESET ?= false
+PSC_INTERNAL_SESSION_TOKEN ?= local-dev-session
 COMPOSE ?= docker compose
-COMPOSE_RUN = env COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)" PSC_DEV_PORT="$(DEV_PORT)" PSC_DATA_DIR="$(PSC_DATA_DIR)" PSC_IMAGE_TAG="$(PSC_IMAGE_TAG)" PSC_TEST_IMAGE_TAG="$(PSC_TEST_IMAGE_TAG)" PSC_DOCKER_GO_PARALLEL="$(DOCKER_GO_PARALLEL)" $(COMPOSE)
-COMPOSE_TEST_RUN = env COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)-test" PSC_DEV_PORT="$(DEV_PORT)" PSC_DATA_DIR="$(PSC_DATA_DIR)" PSC_IMAGE_TAG="$(PSC_IMAGE_TAG)" PSC_TEST_IMAGE_TAG="$(PSC_TEST_IMAGE_TAG)" PSC_DOCKER_GO_PARALLEL="$(DOCKER_GO_PARALLEL)" $(COMPOSE)
-COMPOSE_SMOKE_RUN = env COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)-smoke" PSC_DEV_PORT="$(SMOKE_PORT)" PSC_DATA_DIR="/tmp/project-scientist-smoke-data" PSC_IMAGE_TAG="$(PSC_IMAGE_TAG)" PSC_TEST_IMAGE_TAG="$(PSC_TEST_IMAGE_TAG)" PSC_DOCKER_GO_PARALLEL="$(DOCKER_GO_PARALLEL)" $(COMPOSE)
+COMPOSE_RUN = env COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)" PSC_DEV_PORT="$(DEV_PORT)" PSC_DATA_DIR="$(PSC_DATA_DIR)" PSC_IMAGE_TAG="$(PSC_IMAGE_TAG)" PSC_TEST_IMAGE_TAG="$(PSC_TEST_IMAGE_TAG)" PSC_DOCKER_GO_PARALLEL="$(DOCKER_GO_PARALLEL)" PSC_ENABLE_DEMO_RESET="$(PSC_ENABLE_DEMO_RESET)" PSC_INTERNAL_SESSION_TOKEN="$(PSC_INTERNAL_SESSION_TOKEN)" $(COMPOSE)
+COMPOSE_TEST_RUN = env COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)-test" PSC_DEV_PORT="$(DEV_PORT)" PSC_DATA_DIR="$(PSC_DATA_DIR)" PSC_IMAGE_TAG="$(PSC_IMAGE_TAG)" PSC_TEST_IMAGE_TAG="$(PSC_TEST_IMAGE_TAG)" PSC_DOCKER_GO_PARALLEL="$(DOCKER_GO_PARALLEL)" PSC_ENABLE_DEMO_RESET="false" PSC_INTERNAL_SESSION_TOKEN="$(PSC_INTERNAL_SESSION_TOKEN)" $(COMPOSE)
+COMPOSE_SMOKE_RUN = env COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)-smoke" PSC_DEV_PORT="$(SMOKE_PORT)" PSC_DATA_DIR="/tmp/project-scientist-smoke-data" PSC_IMAGE_TAG="$(PSC_IMAGE_TAG)" PSC_TEST_IMAGE_TAG="$(PSC_TEST_IMAGE_TAG)" PSC_DOCKER_GO_PARALLEL="$(DOCKER_GO_PARALLEL)" PSC_ENABLE_DEMO_RESET="true" PSC_INTERNAL_SESSION_TOKEN="$(PSC_INTERNAL_SESSION_TOKEN)" $(COMPOSE)
 
 # Host gates.
 test:
@@ -44,10 +46,10 @@ docker-smoke:
 		$(COMPOSE_SMOKE_RUN) down --volumes --remove-orphans >/dev/null 2>&1 || true; \
 		$(COMPOSE_SMOKE_RUN) up --build -d project-scientist; \
 		./scripts/wait-health.sh $(SMOKE_BASE_URL)/healthz; \
-		./scripts/dev-seed.sh $(SMOKE_BASE_URL); \
-		curl -fsS $(SMOKE_BASE_URL)/api/state | grep -q 'Okefenokee Synthetic Water Authority'; \
-		curl -fsS $(SMOKE_BASE_URL)/api/state | grep -q 'S-000001'; \
-		curl -fsS -H 'Accept: application/json' -X POST \
+		PSC_INTERNAL_SESSION_TOKEN="$(PSC_INTERNAL_SESSION_TOKEN)" ./scripts/dev-seed.sh $(SMOKE_BASE_URL); \
+		curl -fsS -H 'Cookie: psc_internal_session=$(PSC_INTERNAL_SESSION_TOKEN)' $(SMOKE_BASE_URL)/api/state | grep -q 'Okefenokee Synthetic Water Authority'; \
+		curl -fsS -H 'Cookie: psc_internal_session=$(PSC_INTERNAL_SESSION_TOKEN)' $(SMOKE_BASE_URL)/api/state | grep -q 'S-000001'; \
+		curl -fsS -H 'Accept: application/json' -H 'Cookie: psc_internal_session=$(PSC_INTERNAL_SESSION_TOKEN)' -X POST \
 			-d tenant_id=lab-test -d lab_id=default-lab \
 			-d package_format=application/vnd.project-scientist.coc+json \
 			-d attachment_name=custody-history.json \
@@ -95,7 +97,7 @@ dev-reset:
 	$(COMPOSE_RUN) down --volumes --remove-orphans
 
 dev-seed:
-	@./scripts/dev-seed.sh $(DEV_BASE_URL)
+	@PSC_INTERNAL_SESSION_TOKEN="$(PSC_INTERNAL_SESSION_TOKEN)" ./scripts/dev-seed.sh $(DEV_BASE_URL)
 
 mvp-vertical-slice:
 	@go run ./cmd/project-scientist mvp vertical-slice --db "$${PSC_MVP_DB:-data/project-scientist-mvp.db}"
@@ -103,4 +105,6 @@ mvp-vertical-slice:
 mvp-verify-suite:
 	@go run ./cmd/project-scientist mvp verify-suite --db "$${PSC_MVP_DB:-data/project-scientist-mvp.db}" --artifacts "$${PSC_MVP_ARTIFACTS:-artifacts/mvp-verification}"
 
-demo-reset: dev-up dev-seed
+demo-reset:
+	$(MAKE) PSC_ENABLE_DEMO_RESET=true dev-up
+	@PSC_INTERNAL_SESSION_TOKEN="$(PSC_INTERNAL_SESSION_TOKEN)" ./scripts/dev-seed.sh $(DEV_BASE_URL)

@@ -126,6 +126,25 @@ func TestCreateClientUsesServerSideSessionScopeWhenRequestHasNoTenant(t *testing
 	}
 }
 
+func TestConfiguredInternalSessionCanAuthorizeLocalDemoReset(t *testing.T) {
+	t.Setenv("PSC_INTERNAL_SESSION_TOKEN", "configured-demo-reset-token")
+	t.Setenv("PSC_INTERNAL_SESSION_TENANT_ID", lab.DefaultTenantID)
+	t.Setenv("PSC_INTERNAL_SESSION_LAB_ID", lab.DefaultLabID)
+	t.Setenv("PSC_INTERNAL_SESSION_USER", "configured-lab-dev")
+
+	sessions := configuredInternalSessions()
+	session, ok := sessions["configured-demo-reset-token"]
+	if !ok {
+		t.Fatalf("expected configured internal session token")
+	}
+	for _, role := range session.Actor.Roles {
+		if role == string(lab.RoleAdmin) {
+			return
+		}
+	}
+	t.Fatalf("configured internal session must include admin role for authorized local demo reset, got %#v", session.Actor.Roles)
+}
+
 const defaultTestSessionToken = "test-session-default"
 
 func newSessionTestApp(store *lab.Store) *app {
