@@ -1,0 +1,34 @@
+{
+  "created_at": "2026-06-23T05:22:13.999333Z",
+  "source_database": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof/source-data/project-scientist.db",
+  "backup_directory": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof/backup",
+  "backup_database": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof/backup/project-scientist.db",
+  "database_sha256": "27399b0295498af6a660d600b49136adcaccda5a85c7d3ada5d44fd8baef0324",
+  "database_bytes": 503808,
+  "audit_event_count": 3,
+  "audit_tail_sequence": 3,
+  "audit_tail_hash": "56688410e42a4458b62ce244aed63c2c70f0cd74525d6e6bce7c4a5c42d048bd",
+  "checkpoint": {
+    "name": "latest",
+    "sequence": 3,
+    "hash": "56688410e42a4458b62ce244aed63c2c70f0cd74525d6e6bce7c4a5c42d048bd",
+    "created_at": "2026-06-23T05:22:13.990235Z"
+  },
+  "config_files": [
+    {
+      "source": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof/config/project-scientist.env",
+      "path": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof/backup/config/project-scientist.env",
+      "sha256": "2d246e73fb845849a948ba30c53c45889f27ecb17f0528d0ec93f90db9f060b4",
+      "bytes": 126
+    }
+  ],
+  "artifact_files": [
+    {
+      "source": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof/artifacts/synthetic-coa.txt",
+      "path": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof/backup/artifacts/synthetic-coa.txt",
+      "sha256": "8373b2da81c24f0e660df70b785829a69f18284ae545e21b6b2633d77ace4b60",
+      "bytes": 96
+    }
+  ],
+  "manifest_path": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof/backup/backup-manifest.json"
+}

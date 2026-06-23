@@ -1,0 +1,2 @@
+Synthetic lab-test artifact for backup/restore proof.
+No customer data. No production mutation.

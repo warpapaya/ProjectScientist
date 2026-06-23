@@ -1,0 +1,42 @@
+{
+  "status": "pass",
+  "command": "project-scientist mvp verify-suite --db docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/project-scientist-mvp-suite.db --artifacts docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/artifacts",
+  "db_path": "docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/project-scientist-mvp-suite.db",
+  "sample_id": "S-000001",
+  "worksheet_id": "WS-000001",
+  "report_artifact_id": "RA-000001",
+  "negative_controls": [
+    "illegal_workflow_jump:transition received -\u003e in_review is not allowed",
+    "unauthorized_mutation:authorization denied",
+    "release_before_preconditions:sample \"S-000001\" has QC batch(es) not accepted: QCB-000001",
+    "cross_tenant_attempt:unknown sample \"S-000001\"",
+    "mutate_released_artifact:result \"R-000001\" is locked after review; reopen before amending"
+  ],
+  "audit_actions": [
+    "client.created",
+    "site.created",
+    "contact.created",
+    "contact.role.assigned",
+    "sample_reference.created",
+    "catalog.configure",
+    "catalog.snapshot.created",
+    "project.created",
+    "client.defaults.upserted",
+    "sample.created",
+    "sample.transition.requested",
+    "sample.label_artifact.generated",
+    "result.entry",
+    "sample.transitioned",
+    "worksheet.created",
+    "worksheet.transitioned",
+    "result.created",
+    "result.accepted",
+    "qc_batch.created",
+    "qc_batch.item.added",
+    "qc_batch.relationship.created",
+    "sample.release.blocked",
+    "qc_batch.status.changed",
+    "report.artifact.released",
+    "result.update.denied"
+  ]
+}

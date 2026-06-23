@@ -1,0 +1,154 @@
+# PSC-RM-084 internal synthetic drill transcript
+started_utc=20260623T052207Z
+worktree=/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness
+branch=psc-rm-084-pilot-readiness
+head_before=fd1198e7642ebf24b5588f0f8a4eeafdf63f0d45
+safety=synthetic internal local drill only; no customer data; no external/public URL; no SENAITE production integration; no customer-facing mutation
+
+===== go test ./... =====
+ok  	github.com/warpapaya/ProjectScientist/cmd/project-scientist	0.800s
+ok  	github.com/warpapaya/ProjectScientist/internal/lab	1.866s
+===== exit 0: go test ./... =====
+
+===== make fmt-check =====
+===== exit 0: make fmt-check =====
+
+===== go vet ./... =====
+===== exit 0: go vet ./... =====
+
+===== make docker-smoke SMOKE_PORT=18184 COMPOSE_PROJECT_NAME=project-scientist-psc-rm-084-drill PSC_DATA_DIR=/tmp/project-scientist-psc-rm-084-data =====
+ Image project-scientist:project-scientist-pilot-readiness-dev-local Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 864B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.86kB done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/alpine:3.22@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601
+#3 DONE 0.0s
+
+#4 [internal] load metadata for docker.io/library/golang:1.26-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648
+#4 DONE 0.3s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 139B done
+#5 DONE 0.0s
+
+#6 [build 1/8] FROM docker.io/library/golang:1.26-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648
+#6 resolve docker.io/library/golang:1.26-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648 0.0s done
+#6 DONE 0.0s
+
+#7 [runtime 1/6] FROM docker.io/library/alpine:3.22@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601
+#7 resolve docker.io/library/alpine:3.22@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601 0.0s done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 946.57kB 0.0s done
+#8 DONE 0.0s
+
+#9 [runtime 2/6] RUN addgroup -S scientist && adduser -S scientist -G scientist && mkdir -p /data /app/web && chown -R scientist:scientist /data /app
+#9 CACHED
+
+#10 [runtime 4/6] COPY --from=build /out/project-scientist /app/project-scientist
+#10 CACHED
+
+#11 [runtime 3/6] WORKDIR /app
+#11 CACHED
+
+#12 [build 5/8] RUN go mod download
+#12 CACHED
+
+#13 [build 3/8] WORKDIR /src
+#13 CACHED
+
+#14 [build 8/8] RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w -linkmode external -extldflags '-static'" -o /out/project-scientist ./cmd/project-scientist
+#14 CACHED
+
+#15 [build 2/8] RUN apk add --no-cache gcc musl-dev
+#15 CACHED
+
+#16 [build 7/8] COPY internal ./internal
+#16 CACHED
+
+#17 [build 6/8] COPY cmd ./cmd
+#17 CACHED
+
+#18 [build 4/8] COPY go.* ./
+#18 CACHED
+
+#19 [runtime 5/6] COPY --chown=scientist:scientist web ./web
+#19 CACHED
+
+#20 [runtime 6/6] COPY --chown=scientist:scientist fixtures ./fixtures
+#20 CACHED
+
+#21 exporting to image
+#21 exporting layers done
+#21 exporting manifest sha256:1ffad47417c6497fb41fb7d932d31ca848da847376807bcdd44cafe37a2d8316 done
+#21 exporting config sha256:e98578393477736a01be3a88b8117d898fbe55964eb8fff7d6374e2534bb71ed done
+#21 exporting attestation manifest sha256:2790412ee048c94acd71d2a029f7ebc0fb4f07405a005c9dff3721858d666b5f done
+#21 exporting manifest list sha256:c59fc09fae3822c43aa2987b2eb53991fba7566ca2e4e4551787909a1aab266f done
+#21 naming to docker.io/library/project-scientist:project-scientist-pilot-readiness-dev-local done
+#21 unpacking to docker.io/library/project-scientist:project-scientist-pilot-readiness-dev-local done
+#21 DONE 0.1s
+
+#22 resolving provenance for metadata file
+#22 DONE 0.0s
+ Image project-scientist:project-scientist-pilot-readiness-dev-local Built 
+ Network project-scientist-psc-rm-084-drill-smoke_default Creating 
+ Network project-scientist-psc-rm-084-drill-smoke_default Created 
+ Volume project-scientist-psc-rm-084-drill-smoke_project-scientist-data Creating 
+ Volume project-scientist-psc-rm-084-drill-smoke_project-scientist-data Created 
+ Container project-scientist-psc-rm-084-drill-smoke-project-scientist-1 Creating 
+ Container project-scientist-psc-rm-084-drill-smoke-project-scientist-1 Created 
+ Container project-scientist-psc-rm-084-drill-smoke-project-scientist-1 Starting 
+ Container project-scientist-psc-rm-084-drill-smoke-project-scientist-1 Started 
+ok
+seeded deterministic synthetic demo data at http://127.0.0.1:18184: {"fixture_id":"psc-mvp-synthetic-lab-v1","client_id":"C-00001","client_name":"Okefenokee Synthetic Water Authority","sample_id":"S-000001","project":"MVP Drinking Water Compliance Demo","matrix":"Drinking Water","analysis_count":4,"sample_reference_count":15}
+docker smoke ok
+===== exit 0: make docker-smoke SMOKE_PORT=18184 COMPOSE_PROJECT_NAME=project-scientist-psc-rm-084-drill PSC_DATA_DIR=/tmp/project-scientist-psc-rm-084-data =====
+
+===== make performance-concurrency-smoke =====
+{
+  "db_path": "/var/folders/nk/_6t3qrf53jsbtfd64r84cd0w0000gn/T/project-scientist-performance-smoke-1782192133236209000.db",
+  "concurrency": 4,
+  "limits": {
+    "samples": 12,
+    "reports": 3
+  },
+  "samples_created": 12,
+  "results_entered": 12,
+  "results_accepted": 12,
+  "reports_generated": 3,
+  "audit_events": 88,
+  "duration_ms": 41,
+  "ops_per_second": 2144.4911859584568,
+  "observations": [
+    "synthetic lab-test lane only; no customer/prod mutation or customer-facing claims",
+    "concurrent goroutines exercise sample mutations, result entry/review, transition audit writes, and COA report artifact generation against one SQLite store",
+    "current Store serializes write paths with an in-process mutex; this smoke validates correctness and catches obvious contention/errors, not production-grade throughput"
+  ]
+}
+===== exit 0: make performance-concurrency-smoke =====
+
+===== env PSC_BACKUP_PROOF_DIR=docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof make backup-restore-proof =====
+backup/restore proof ok: docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof
+result: docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof/proof-result.json
+summary: docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof/proof-summary.md
+===== exit 0: env PSC_BACKUP_PROOF_DIR=docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof make backup-restore-proof =====
+
+===== env PSC_MVP_DB=docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/project-scientist-mvp.db make mvp-vertical-slice =====
+mvp vertical-slice ok db=docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/project-scientist-mvp.db sample=S-000001 worksheet=WS-000001 report_artifact=RA-000001 denied_controls=5
+===== exit 0: env PSC_MVP_DB=docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/project-scientist-mvp.db make mvp-vertical-slice =====
+
+===== env PSC_MVP_DB=docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/project-scientist-mvp-suite.db PSC_MVP_ARTIFACTS=docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/artifacts make mvp-verify-suite =====
+mvp verify-suite ok db=docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/project-scientist-mvp-suite.db sample=S-000001 worksheet=WS-000001 report_artifact=RA-000001 negative_controls=5 artifact=docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/artifacts/mvp-verification-suite.json
+===== exit 0: env PSC_MVP_DB=docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/project-scientist-mvp-suite.db PSC_MVP_ARTIFACTS=docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/artifacts make mvp-verify-suite =====
+
+===== make dev-down COMPOSE_PROJECT_NAME=project-scientist-psc-rm-084-drill DEV_PORT=18183 SMOKE_PORT=18184 PSC_DATA_DIR=/tmp/project-scientist-psc-rm-084-data =====
+env COMPOSE_PROJECT_NAME="project-scientist-psc-rm-084-drill" PSC_DEV_PORT="18183" PSC_DATA_DIR="/tmp/project-scientist-psc-rm-084-data" PSC_IMAGE_TAG="project-scientist:project-scientist-pilot-readiness-dev-local" PSC_TEST_IMAGE_TAG="project-scientist:project-scientist-pilot-readiness-test-local" PSC_DOCKER_GO_PARALLEL="1" docker compose down --remove-orphans
+===== exit 0: make dev-down COMPOSE_PROJECT_NAME=project-scientist-psc-rm-084-drill DEV_PORT=18183 SMOKE_PORT=18184 PSC_DATA_DIR=/tmp/project-scientist-psc-rm-084-data =====
+
+completed_utc=20260623T052215Z
