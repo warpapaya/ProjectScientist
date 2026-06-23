@@ -72,6 +72,12 @@ type ResultReviewInput struct {
 	EnforceReviewerSeparation bool           `json:"enforce_reviewer_separation"`
 }
 
+type ReportResultAmendmentInput struct {
+	Reason               string `json:"reason"`
+	SupersededSnapshotID string `json:"superseded_snapshot_id"`
+	SupersededArtifactID string `json:"superseded_artifact_id"`
+}
+
 func (s *Store) CreateResult(input ResultInput, actor ActorContext) (Result, error) {
 	return s.CreateResultForScope(defaultScope(), input, actor)
 }
@@ -312,6 +318,14 @@ func (s *Store) ReopenResultForScope(scope Scope, id, reason string, actor Actor
 			deniedErr = ErrAuthorizationDenied
 			return nil
 		}
+		currentReport, err := currentReportForSampleTx(tx, scope, current.SampleID)
+		if err != nil {
+			return err
+		}
+		if currentReport != nil {
+			deniedErr = fmt.Errorf("result %q has a released report artifact; use released report amendment workflow", id)
+			return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "result.reopen.denied", Outcome: AuditOutcomeDenied, Reason: "released_report_requires_amendment", Resource: AuditResource{Type: "result", ID: current.ID}, Details: map[string]any{"sample_id": current.SampleID, "superseded_snapshot_id": currentReport.SnapshotID, "superseded_artifact_id": currentReport.ArtifactID}})
+		}
 		reopened = current
 		reopened.Status = ResultStatusEntered
 		reopened.ReviewedBy = ""
@@ -323,6 +337,81 @@ func (s *Store) ReopenResultForScope(scope Scope, id, reason string, actor Actor
 			return err
 		}
 		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "result.reopened", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "result", ID: reopened.ID}, Details: map[string]any{"sample_id": reopened.SampleID, "analysis_request_line_id": reopened.AnalysisRequestLineID, "reason": reason}})
+	})
+	if err != nil {
+		return Result{}, err
+	}
+	if deniedErr != nil {
+		return Result{}, deniedErr
+	}
+	return reopened, nil
+}
+
+func (s *Store) ReopenResultForReportAmendment(id string, input ReportResultAmendmentInput, actor ActorContext) (Result, error) {
+	return s.ReopenResultForReportAmendmentForScope(defaultScope(), id, input, actor)
+}
+
+func (s *Store) ReopenResultForReportAmendmentForScope(scope Scope, id string, input ReportResultAmendmentInput, actor ActorContext) (Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return Result{}, err
+	}
+	id = strings.TrimSpace(id)
+	input = normalizeReportResultAmendmentInput(input)
+	if input.Reason == "" {
+		return Result{}, errors.New("amendment reason is required")
+	}
+	if input.SupersededSnapshotID == "" || input.SupersededArtifactID == "" {
+		return Result{}, errors.New("superseded snapshot and artifact ids are required")
+	}
+	var reopened Result
+	var deniedErr error
+	err = s.withTx(func(tx *sql.Tx) error {
+		current, err := resultByIDTx(tx, id)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("unknown result %q", id)
+			}
+			return err
+		}
+		if current.TenantID != scope.TenantID || current.LabID != scope.LabID {
+			deniedErr = fmt.Errorf("result %q is outside requested tenant/lab scope", id)
+			return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "result.report_amendment.requested", Outcome: AuditOutcomeDenied, Reason: "scope_mismatch", Resource: AuditResource{Type: "result", ID: id}})
+		}
+		allowed, authErr := authorizeOperationTx(tx, scope, OperationReportAmend, actor, AuditResource{Type: "result", ID: current.ID}, map[string]any{"sample_id": current.SampleID, "superseded_snapshot_id": input.SupersededSnapshotID, "superseded_artifact_id": input.SupersededArtifactID})
+		if authErr != nil {
+			return authErr
+		}
+		if !allowed {
+			deniedErr = fmt.Errorf("%w: report amendment requires report-releaser role", ErrAuthorizationDenied)
+			return nil
+		}
+		currentReport, err := currentReportForSampleTx(tx, scope, current.SampleID)
+		if err != nil {
+			return err
+		}
+		if currentReport == nil || currentReport.SnapshotID != input.SupersededSnapshotID || currentReport.ArtifactID != input.SupersededArtifactID {
+			deniedErr = fmt.Errorf("current released report does not match superseded snapshot/artifact for result %q", id)
+			details := map[string]any{"sample_id": current.SampleID, "requested_superseded_snapshot_id": input.SupersededSnapshotID, "requested_superseded_artifact_id": input.SupersededArtifactID}
+			if currentReport != nil {
+				details["current_snapshot_id"] = currentReport.SnapshotID
+				details["current_artifact_id"] = currentReport.ArtifactID
+			}
+			return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "result.report_amendment.denied", Outcome: AuditOutcomeDenied, Reason: "current_report_mismatch", Resource: AuditResource{Type: "result", ID: current.ID}, Details: details})
+		}
+		reopened = current
+		reopened.Status = ResultStatusEntered
+		reopened.ReviewedBy = ""
+		reopened.ReviewComments = ""
+		reopened.ReviewedAt = time.Time{}
+		reopened.ReopenReason = input.Reason
+		reopened.UpdatedAt = time.Now().UTC()
+		if _, err := tx.Exec(`UPDATE results SET status = ?, reviewed_by = '', review_comments = '', reviewed_at = '', reopen_reason = ?, updated_at = ? WHERE id = ?`, string(reopened.Status), reopened.ReopenReason, formatTime(reopened.UpdatedAt), reopened.ID); err != nil {
+			return err
+		}
+		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "result.report_amendment.opened", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "result", ID: reopened.ID}, Details: map[string]any{"sample_id": reopened.SampleID, "analysis_request_line_id": reopened.AnalysisRequestLineID, "reason": input.Reason, "superseded_snapshot_id": input.SupersededSnapshotID, "superseded_artifact_id": input.SupersededArtifactID}})
 	})
 	if err != nil {
 		return Result{}, err
@@ -378,6 +467,13 @@ func normalizeResultInput(input ResultInput) ResultInput {
 	input.Comments = strings.TrimSpace(input.Comments)
 	input.AnalystID = strings.TrimSpace(input.AnalystID)
 	input.InstrumentID = strings.TrimSpace(input.InstrumentID)
+	return input
+}
+
+func normalizeReportResultAmendmentInput(input ReportResultAmendmentInput) ReportResultAmendmentInput {
+	input.Reason = strings.TrimSpace(input.Reason)
+	input.SupersededSnapshotID = strings.TrimSpace(input.SupersededSnapshotID)
+	input.SupersededArtifactID = strings.TrimSpace(input.SupersededArtifactID)
 	return input
 }
 
