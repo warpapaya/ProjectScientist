@@ -162,6 +162,12 @@ func (s *Store) RunMVPVerticalSliceForScope(scope Scope, input MVPVerticalSliceI
 	}
 	summary.Sample = sample
 
+	if err := s.TransitionSampleForScope(scope, sample.ID, StatusInReview, actor); err != nil {
+		summary.DeniedControls = append(summary.DeniedControls, "illegal_workflow_jump:"+err.Error())
+	} else {
+		return summary, errors.New("illegal workflow jump unexpectedly succeeded")
+	}
+
 	label, err := s.GenerateSampleLabelArtifactForScope(scope, sample.ID, actor)
 	if err != nil {
 		return summary, err
@@ -172,6 +178,12 @@ func (s *Store) RunMVPVerticalSliceForScope(scope Scope, input MVPVerticalSliceI
 		return summary, errors.New("sample intake did not create analysis request lines")
 	}
 	summary.AnalysisRequestLines = lines
+
+	if _, err := s.CreateResultForScope(scope, ResultInput{AnalysisRequestLineID: lines[0].ID, Value: 9.9, RawValue: "9.9 mg/L", Unit: "mg/L", Dilution: 1}, mvpActor(scope, "mvp-client-contact", RoleClientContact)); err != nil {
+		summary.DeniedControls = append(summary.DeniedControls, "unauthorized_mutation:"+err.Error())
+	} else {
+		return summary, errors.New("unauthorized result mutation unexpectedly succeeded")
+	}
 
 	if err := s.TransitionSampleForScope(scope, sample.ID, StatusInPrep, actor); err != nil {
 		return summary, err
@@ -233,7 +245,7 @@ func (s *Store) RunMVPVerticalSliceForScope(scope Scope, input MVPVerticalSliceI
 		return summary, err
 	}
 	if err := s.TransitionSampleForScope(scope, sample.ID, StatusReleased, actor); err != nil {
-		summary.DeniedControls = append(summary.DeniedControls, "release_before_qc:"+err.Error())
+		summary.DeniedControls = append(summary.DeniedControls, "release_before_preconditions:"+err.Error())
 	} else {
 		return summary, errors.New("release before accepted QC unexpectedly succeeded")
 	}
@@ -256,7 +268,7 @@ func (s *Store) RunMVPVerticalSliceForScope(scope Scope, input MVPVerticalSliceI
 	}
 
 	if _, err := s.GenerateCOAReportArtifactForScope(Scope{TenantID: "other-tenant", LabID: scope.LabID}, COAGenerationInput{SampleID: sample.ID, Template: COATemplate{ID: input.TemplateID, Version: input.TemplateVersion, Style: COAStyleCENLA, LabName: "Clearline Demo Lab", ClientName: client.Name}}, mvpActor(Scope{TenantID: "other-tenant", LabID: scope.LabID}, "other-releaser", RoleReportReleaser)); err != nil {
-		summary.DeniedControls = append(summary.DeniedControls, "cross_tenant_report:"+err.Error())
+		summary.DeniedControls = append(summary.DeniedControls, "cross_tenant_attempt:"+err.Error())
 	} else {
 		return summary, errors.New("cross-tenant report generation unexpectedly succeeded")
 	}
@@ -266,7 +278,7 @@ func (s *Store) RunMVPVerticalSliceForScope(scope Scope, input MVPVerticalSliceI
 	}
 	summary.Report = released
 	if _, err := s.UpdateResultForScope(scope, results[0].ID, ResultInput{AnalysisRequestLineID: lines[0].ID, Value: 99, RawValue: "99 mg/L", Unit: "mg/L", Dilution: 1}, mvpActor(scope, "mvp-analyst", RoleAnalyst)); err != nil {
-		summary.DeniedControls = append(summary.DeniedControls, "locked_result_update:"+err.Error())
+		summary.DeniedControls = append(summary.DeniedControls, "mutate_released_artifact:"+err.Error())
 	} else {
 		return summary, errors.New("locked result update unexpectedly succeeded")
 	}
