@@ -24,7 +24,7 @@ func TestReportReleaseDeskShowsBlockedReleaseAndAmendmentActions(t *testing.T) {
 		t.Fatalf("index status=%d body=%s", indexRR.Code, indexRR.Body.String())
 	}
 	blockedBody := indexRR.Body.String()
-	for _, want := range []string{"Report release desk", "Blocked", "sample_status", "unaccepted_result", "Preview COA", "Release report", "/api/samples/" + sample.ID + "/report-preview", "/api/samples/" + sample.ID + "/report-release"} {
+	for _, want := range []string{"Report readiness desk", "Report blocked", "Sample not ready", "Results need review", "Preview COA", "Release locked", "/api/samples/" + sample.ID + "/report-preview", "/api/samples/" + sample.ID + "/report-release"} {
 		if !strings.Contains(blockedBody, want) {
 			t.Fatalf("release desk missing %q before readiness:\n%s", want, blockedBody)
 		}
@@ -61,7 +61,7 @@ func TestReportReleaseDeskShowsBlockedReleaseAndAmendmentActions(t *testing.T) {
 	readyRR := httptest.NewRecorder()
 	app.index(readyRR, newDefaultSessionRequest(http.MethodGet, "/", nil))
 	readyBody := readyRR.Body.String()
-	for _, want := range []string{"Ready", "Amend report", "Download current report", "Download COC package"} {
+	for _, want := range []string{"Ready for demo release preview", "Amend report", "Download current report", "Download COC package"} {
 		if !strings.Contains(readyBody, want) {
 			t.Fatalf("release desk missing %q after release/package:\n%s", want, readyBody)
 		}

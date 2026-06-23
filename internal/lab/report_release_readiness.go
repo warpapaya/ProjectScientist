@@ -99,9 +99,15 @@ func reportReleaseReadinessForSampleQuery(q interface {
 	if err != nil {
 		return ReportReleaseReadiness{}, err
 	}
-	readiness := ReportReleaseReadiness{SampleID: sample.ID, SampleStatus: sample.Status, PreviewLabel: fmt.Sprintf("Preview COA for %s", sample.ID), QCAccepted: len(qcBlockers) == 0, Blockers: []ReportReadinessBlocker{}}
+	requestedCount, err := requestedAnalysisCountForSampleQuery(q, scope, sample.ID)
+	if err != nil {
+		return ReportReleaseReadiness{}, err
+	}
+	readiness := ReportReleaseReadiness{SampleID: sample.ID, SampleStatus: sample.Status, PreviewLabel: fmt.Sprintf("Preview COA for %s", sample.ID), ResultCount: requestedCount, QCAccepted: len(qcBlockers) == 0, Blockers: []ReportReadinessBlocker{}}
+	if readiness.ResultCount == 0 {
+		readiness.ResultCount = len(results)
+	}
 	for _, result := range results {
-		readiness.ResultCount++
 		if result.Status == ResultStatusAccepted {
 			readiness.AcceptedResultCount++
 		}
@@ -142,6 +148,14 @@ func reportReleaseReadinessForSampleQuery(q interface {
 		readiness.ReleaseAction = "amendment"
 	}
 	return readiness, nil
+}
+
+func requestedAnalysisCountForSampleQuery(q interface{ QueryRow(string, ...any) *sql.Row }, scope Scope, sampleID string) (int, error) {
+	var count int
+	if err := q.QueryRow(`SELECT COUNT(*) FROM analysis_request_lines WHERE tenant_id = ? AND lab_id = ? AND sample_id = ?`, scope.TenantID, scope.LabID, strings.TrimSpace(sampleID)).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 type reportCurrentDetailRow struct {

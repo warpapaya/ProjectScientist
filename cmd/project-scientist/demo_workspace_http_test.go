@@ -29,8 +29,8 @@ func TestDashboardOffersBrowserDemoWorkspaceWhenEnabled(t *testing.T) {
 	for _, want := range []string{
 		`id="demo-workspace"`,
 		`method="post" action="/api/demo/reset"`,
-		`Load demo workspace`,
-		`Tindall/CENLA-style sample data`,
+		`Load synthetic demo`,
+		`No real customer data is used.`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard missing demo workspace affordance %q\n%s", want, body)
