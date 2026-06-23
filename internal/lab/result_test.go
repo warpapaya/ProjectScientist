@@ -105,6 +105,121 @@ func TestResultLifecycleStoresRealisticLabValuesAndAuditsCreateUpdateReview(t *t
 	assertAuditAction(t, events, "result.reopened", result.ID)
 }
 
+func TestReleasedReportBlocksSilentResultMutationAndRequiresReportAmendment(t *testing.T) {
+	store, sample, batch := seedReleaseReadinessFixture(t)
+	defer store.Close()
+
+	manager := testActorWithRoles("release-manager", RoleLabManager)
+	if err := advanceSampleToReview(store, sample.ID, manager); err != nil {
+		t.Fatalf("advance sample: %v", err)
+	}
+	result := store.ResultsForScope(DefaultScope)[0]
+	if _, err := store.ReviewResult(result.ID, ResultReviewInput{Decision: ResultDecisionAccept, Comments: "approved for report", EnforceReviewerSeparation: true}, testActorWithRoles("reviewer-1", RoleReviewer)); err != nil {
+		t.Fatalf("accept result: %v", err)
+	}
+	if _, err := store.TransitionQCBatch(batch.ID, QCBatchStatusInReview, "ready", manager); err != nil {
+		t.Fatalf("QC review: %v", err)
+	}
+	if _, err := store.TransitionQCBatch(batch.ID, QCBatchStatusAccepted, "batch acceptable", manager); err != nil {
+		t.Fatalf("QC accept: %v", err)
+	}
+	if err := store.TransitionSample(sample.ID, StatusReleased, manager); err != nil {
+		t.Fatalf("release sample: %v", err)
+	}
+	originalReport, err := store.GenerateCOAReportArtifact(COAGenerationInput{SampleID: sample.ID, Template: COATemplate{ID: "coa-standard", Version: "2026.06", Style: COAStyleCENLA, LabName: "Clearline Demo Lab", ClientName: "Demo Client"}}, testActorWithRoles("report-releaser-1", RoleReportReleaser))
+	if err != nil {
+		t.Fatalf("generate original report: %v", err)
+	}
+
+	if _, err := store.ReopenResult(result.ID, "silent analyst correction", manager); err == nil || !strings.Contains(err.Error(), "released report amendment") {
+		t.Fatalf("expected normal reopen to be blocked after released report, got %v", err)
+	}
+	if _, err := store.UpdateResult(result.ID, ResultInput{Value: 9.9, RawValue: "9.9 mg/L", Unit: "mg/L", Dilution: 1}, testActorWithRoles("analyst-1", RoleAnalyst)); err == nil || !strings.Contains(err.Error(), "locked") {
+		t.Fatalf("expected direct post-report update to remain locked, got %v", err)
+	}
+
+	amended, err := store.ReopenResultForReportAmendment(result.ID, ReportResultAmendmentInput{Reason: "transcription correction", SupersededSnapshotID: originalReport.Snapshot.ID, SupersededArtifactID: originalReport.Artifact.ID}, testActorWithRoles("report-releaser-2", RoleReportReleaser))
+	if err != nil {
+		t.Fatalf("open report amendment: %v", err)
+	}
+	if amended.Status != ResultStatusEntered || amended.ReopenReason != "transcription correction" {
+		t.Fatalf("amendment did not reopen result with reason: %#v", amended)
+	}
+	updated, err := store.UpdateResult(result.ID, ResultInput{Value: 1.4, RawValue: "1.4 mg/L", Unit: "mg/L", Dilution: 1, AnalystID: "analyst-1"}, testActorWithRoles("analyst-1", RoleAnalyst))
+	if err != nil {
+		t.Fatalf("update amended result: %v", err)
+	}
+	if updated.Value != 1.4 {
+		t.Fatalf("amended result update not persisted: %#v", updated)
+	}
+	if _, err := store.ReviewResult(result.ID, ResultReviewInput{Decision: ResultDecisionAccept, Comments: "amendment approved", EnforceReviewerSeparation: true}, testActorWithRoles("reviewer-2", RoleReviewer)); err != nil {
+		t.Fatalf("review amended result: %v", err)
+	}
+	newReport, err := store.GenerateCOAReportArtifact(COAGenerationInput{SampleID: sample.ID, Template: COATemplate{ID: "coa-standard", Version: "2026.06", Style: COAStyleCENLA, LabName: "Clearline Demo Lab", ClientName: "Demo Client"}}, testActorWithRoles("report-releaser-2", RoleReportReleaser))
+	if err != nil {
+		t.Fatalf("generate superseding report: %v", err)
+	}
+	if newReport.Snapshot.SupersedesSnapshotID != originalReport.Snapshot.ID || newReport.Artifact.SupersedesArtifactID != originalReport.Artifact.ID {
+		t.Fatalf("new report did not supersede original: new=%#v original=%#v", newReport, originalReport)
+	}
+
+	events, err := store.AuditEvents(0)
+	if err != nil {
+		t.Fatalf("audit events: %v", err)
+	}
+	assertReportAmendmentAudit(t, events, result.ID, originalReport.Snapshot.ID, originalReport.Artifact.ID, "transcription correction")
+}
+
+func TestReportAmendmentRequiresReportReleaserReasonAndSupersededLinks(t *testing.T) {
+	store, sample, batch := seedReleaseReadinessFixture(t)
+	defer store.Close()
+
+	manager := testActorWithRoles("release-manager", RoleLabManager)
+	if err := advanceSampleToReview(store, sample.ID, manager); err != nil {
+		t.Fatalf("advance sample: %v", err)
+	}
+	result := store.ResultsForScope(DefaultScope)[0]
+	if _, err := store.ReviewResult(result.ID, ResultReviewInput{Decision: ResultDecisionAccept, Comments: "approved for report", EnforceReviewerSeparation: true}, testActorWithRoles("reviewer-1", RoleReviewer)); err != nil {
+		t.Fatalf("accept result: %v", err)
+	}
+	if _, err := store.TransitionQCBatch(batch.ID, QCBatchStatusInReview, "ready", manager); err != nil {
+		t.Fatalf("QC review: %v", err)
+	}
+	if _, err := store.TransitionQCBatch(batch.ID, QCBatchStatusAccepted, "batch acceptable", manager); err != nil {
+		t.Fatalf("QC accept: %v", err)
+	}
+	if err := store.TransitionSample(sample.ID, StatusReleased, manager); err != nil {
+		t.Fatalf("release sample: %v", err)
+	}
+	originalReport, err := store.GenerateCOAReportArtifact(COAGenerationInput{SampleID: sample.ID, Template: COATemplate{ID: "coa-standard", Version: "2026.06", Style: COAStyleCENLA, LabName: "Clearline Demo Lab", ClientName: "Demo Client"}}, testActorWithRoles("report-releaser-1", RoleReportReleaser))
+	if err != nil {
+		t.Fatalf("generate original report: %v", err)
+	}
+
+	if _, err := store.ReopenResultForReportAmendment(result.ID, ReportResultAmendmentInput{Reason: " ", SupersededSnapshotID: originalReport.Snapshot.ID, SupersededArtifactID: originalReport.Artifact.ID}, testActorWithRoles("report-releaser-2", RoleReportReleaser)); err == nil || !strings.Contains(err.Error(), "amendment reason is required") {
+		t.Fatalf("expected reason validation, got %v", err)
+	}
+	if _, err := store.ReopenResultForReportAmendment(result.ID, ReportResultAmendmentInput{Reason: "transcription correction", SupersededSnapshotID: originalReport.Snapshot.ID, SupersededArtifactID: originalReport.Artifact.ID}, manager); err == nil || !strings.Contains(err.Error(), "report amendment requires report-releaser role") {
+		t.Fatalf("expected report-releaser authorization, got %v", err)
+	}
+	if _, err := store.ReopenResultForReportAmendment(result.ID, ReportResultAmendmentInput{Reason: "transcription correction", SupersededSnapshotID: "RS-404", SupersededArtifactID: originalReport.Artifact.ID}, testActorWithRoles("report-releaser-2", RoleReportReleaser)); err == nil || !strings.Contains(err.Error(), "current released report") {
+		t.Fatalf("expected superseded snapshot validation, got %v", err)
+	}
+}
+
+func assertReportAmendmentAudit(t *testing.T, events []AuditEvent, resultID, snapshotID, artifactID, reason string) {
+	t.Helper()
+	for _, event := range events {
+		if event.Action != "result.report_amendment.opened" || event.Resource.ID != resultID || event.Outcome != AuditOutcomeAllowed {
+			continue
+		}
+		if event.Details["superseded_snapshot_id"] == snapshotID && event.Details["superseded_artifact_id"] == artifactID && event.Details["reason"] == reason {
+			return
+		}
+	}
+	t.Fatalf("report amendment audit link missing for result=%s snapshot=%s artifact=%s events=%#v", resultID, snapshotID, artifactID, events)
+}
+
 func TestResultValidationRejectsMissingAndInvalidFields(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
 	if err != nil {
