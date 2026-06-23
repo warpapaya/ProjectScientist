@@ -14,8 +14,8 @@
   </header>
 
   <main class="shell">
-    <section class="panel hero">
-      <div><p class="eyebrow">Admin/config</p><h2>Master data workbench</h2><p>Dense configuration for clients, contacts, analysis catalog, and sample reference data. Lab-test only; no customer/prod mutation.</p></div>
+    <section class="panel hero product-hero">
+      <div><p class="eyebrow">Lab operations cockpit</p><h2>Run samples from intake to release without losing the audit trail.</h2><p>A prospect-friendly workspace for daily lab work: guided next actions, fast result entry, release blockers, report artifacts, and defensible traceability in one modern SaaS surface.</p></div>
       <div class="quickkeys"><span>⌘/Ctrl + K: command search</span><span>Alt + 1–6: jump to work sections</span><span>Alt + 5: result entry</span><span>Ctrl/⌘ + Enter: save active result</span><span>Shift + A: audit</span></div>
     </section>
 
@@ -24,7 +24,28 @@
       <label class="command-box" for="admin-command-search"><span>Command search</span><input id="admin-command-search" type="search" placeholder="client, contact, service, matrix…" autocomplete="off"></label>
     </nav>
 
-    <section class="panel metrics" id="master-data-summary" aria-label="Master data summary">
+    <section class="saas-dashboard" aria-label="Project Scientist work dashboard">
+      <article class="panel work-summary">
+        <div class="section-head"><div><p class="eyebrow">Today’s work</p><h2>Sample command center</h2></div><p>Start with the active work, not configuration plumbing. Admin tools are still available, but the default prospect path is sample → results → review → report.</p></div>
+        <div class="summary-grid">
+          <a class="summary-card" href="#workflow-board"><span>Active samples</span><strong>{{len .Samples}}</strong><small>track status, containers, custody</small></a>
+          <a class="summary-card primary" href="#result-entry"><span>Requested results</span><strong>{{len .AnalysisRequestLines}}</strong><small>enter values with keyboard-first grid</small></a>
+          <a class="summary-card" href="#result-review"><span>Review queue</span><strong>{{len .Results}}</strong><small>accept, reject, or reopen results</small></a>
+          <a class="summary-card" href="#report-release"><span>Release checks</span><strong>{{len .ReportReadiness}}</strong><small>blockers and report packages</small></a>
+        </div>
+      </article>
+      <aside class="panel action-rail" aria-label="Guided next actions">
+        <p class="eyebrow">Guided workflow</p>
+        <ol class="next-actions">
+          <li><a href="#intake"><strong>Receive samples</strong><span>Accession client work with matrix, containers, and requested analyses.</span></a></li>
+          <li><a href="#worksheets"><strong>Assign work</strong><span>Group compatible analysis lines into worksheets/batches.</span></a></li>
+          <li><a href="#result-entry"><strong>Enter results</strong><span>Capture value, unit, qualifier, analyst, instrument, and comments.</span></a></li>
+          <li><a href="#result-review"><strong>Review & release</strong><span>Clear blockers, generate COA/COC artifacts, and preserve audit proof.</span></a></li>
+        </ol>
+      </aside>
+    </section>
+
+    <section class="panel metrics" id="master-data-summary" aria-label="Configuration summary">
       <div><strong>{{len .Clients}}</strong><span>clients</span></div><div><strong>{{len .Sites}}</strong><span>sites</span></div><div><strong>{{len .Contacts}}</strong><span>contacts</span></div><div><strong>{{len .Projects}}</strong><span>projects</span></div><div><strong>{{len .Services}}</strong><span>services</span></div><div><strong>{{len .SampleReference}}</strong><span>reference</span></div>
     </section>
 
