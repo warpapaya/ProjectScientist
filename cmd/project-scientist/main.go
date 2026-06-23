@@ -1049,7 +1049,12 @@ func (a *app) previewReportArtifact(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	artifact, err := a.store.PreviewCOAArtifactForScope(scopeFromRequest(r), lab.COAGenerationInput{SampleID: sampleID, Template: defaultCOATemplateFromRequest(r)})
+	scope := scopeFromRequest(r)
+	if !httpActorCanReadScope(r, scope) {
+		http.Error(w, "request scope is not bound to authenticated actor", http.StatusForbidden)
+		return
+	}
+	artifact, err := a.store.PreviewCOAArtifactForScope(scope, lab.COAGenerationInput{SampleID: sampleID, Template: defaultCOATemplateFromRequest(r)})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
