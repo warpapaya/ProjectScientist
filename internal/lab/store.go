@@ -610,7 +610,48 @@ var sqliteMigrations = []string{
 		created_at TEXT NOT NULL,
 		UNIQUE(tenant_id, lab_id, method_id, matrix_key, analyte_key, version)
 	);`,
-	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_worksheet', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('next_analysis_request_line', '1'), ('next_sample_intake_template', '1'), ('next_qc_sample_relationship', '1'), ('next_custody_event', '1'), ('next_qc_batch', '1'), ('next_qc_item', '1'), ('next_qc_relationship', '1'), ('next_qc_limit_rule', '1'), ('next_result', '1'), ('last_hash', '');`,
+	`CREATE TABLE IF NOT EXISTS report_snapshots (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		sample_id TEXT NOT NULL REFERENCES samples(id),
+		template_id TEXT NOT NULL CHECK (length(trim(template_id)) > 0),
+		template_version TEXT NOT NULL CHECK (length(trim(template_version)) > 0),
+		generation_inputs_json TEXT NOT NULL,
+		data_snapshot_json TEXT NOT NULL,
+		reviewed_by TEXT NOT NULL DEFAULT '',
+		released_by TEXT NOT NULL CHECK (length(trim(released_by)) > 0),
+		released_at TEXT NOT NULL,
+		content_hash TEXT NOT NULL,
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TRIGGER IF NOT EXISTS report_snapshots_immutable_update BEFORE UPDATE ON report_snapshots BEGIN SELECT RAISE(ABORT, 'report snapshot is immutable'); END;`,
+	`CREATE TRIGGER IF NOT EXISTS report_snapshots_immutable_delete BEFORE DELETE ON report_snapshots BEGIN SELECT RAISE(ABORT, 'report snapshot is immutable'); END;`,
+	`CREATE TABLE IF NOT EXISTS report_artifacts (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		sample_id TEXT NOT NULL REFERENCES samples(id),
+		snapshot_id TEXT NOT NULL REFERENCES report_snapshots(id),
+		format TEXT NOT NULL CHECK (length(trim(format)) > 0),
+		content_hash TEXT NOT NULL,
+		content_blob BLOB NOT NULL,
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TRIGGER IF NOT EXISTS report_artifacts_immutable_update BEFORE UPDATE ON report_artifacts BEGIN SELECT RAISE(ABORT, 'report artifact is immutable'); END;`,
+	`CREATE TRIGGER IF NOT EXISTS report_artifacts_immutable_delete BEFORE DELETE ON report_artifacts BEGIN SELECT RAISE(ABORT, 'report artifact is immutable'); END;`,
+	`CREATE TABLE IF NOT EXISTS report_supersessions (
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		superseded_snapshot_id TEXT NOT NULL REFERENCES report_snapshots(id),
+		superseding_snapshot_id TEXT NOT NULL REFERENCES report_snapshots(id),
+		superseded_artifact_id TEXT NOT NULL REFERENCES report_artifacts(id),
+		superseding_artifact_id TEXT NOT NULL REFERENCES report_artifacts(id),
+		reason TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL,
+		PRIMARY KEY(superseded_snapshot_id, superseding_snapshot_id)
+	);`,
+	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_worksheet', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('next_analysis_request_line', '1'), ('next_sample_intake_template', '1'), ('next_qc_sample_relationship', '1'), ('next_custody_event', '1'), ('next_qc_batch', '1'), ('next_qc_item', '1'), ('next_qc_relationship', '1'), ('next_qc_limit_rule', '1'), ('next_result', '1'), ('next_report_snapshot', '1'), ('next_report_artifact', '1'), ('last_hash', '');`,
 	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (9, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
 }
 
@@ -647,6 +688,9 @@ var sqlitePostMigrationIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_qc_items_scope_batch ON qc_items(tenant_id, lab_id, qc_batch_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_qc_relationships_scope_batch ON qc_relationships(tenant_id, lab_id, qc_batch_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_qc_limit_rules_match ON qc_limit_rules(tenant_id, lab_id, method_id, matrix_key, analyte_key, active, version);`,
+	`CREATE INDEX IF NOT EXISTS idx_report_snapshots_scope_sample ON report_snapshots(tenant_id, lab_id, sample_id, released_at);`,
+	`CREATE INDEX IF NOT EXISTS idx_report_artifacts_scope_sample ON report_artifacts(tenant_id, lab_id, sample_id, created_at);`,
+	`CREATE INDEX IF NOT EXISTS idx_report_supersessions_superseding ON report_supersessions(superseding_snapshot_id);`,
 }
 
 func OpenStore(statePath, _ string) (*Store, error) { return OpenSQLiteStore(statePath) }
