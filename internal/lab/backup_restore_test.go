@@ -85,7 +85,11 @@ func TestBackupRestoreProofScriptUsesAuthorizedSyntheticActor(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(proofDir) })
 
-	cmd := exec.Command("bash", script)
+	bashPath, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skipf("backup restore proof script requires bash: %v", err)
+	}
+	cmd := exec.Command(bashPath, script)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "PSC_BACKUP_PROOF_DIR="+proofDir)
 	output, err := cmd.CombinedOutput()
