@@ -1010,16 +1010,13 @@ func (s *Store) TransitionSampleForScope(scope Scope, sampleID string, next Samp
 			deniedErr = ErrAuthorizationDenied
 			return nil
 		}
-		sample, err := sampleByIDTx(tx, sampleID)
+		sample, err := sampleByIDForScopeTx(tx, scope, sampleID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("unknown sample %q", sampleID)
+				deniedErr = fmt.Errorf("unknown sample %q", sampleID)
+				return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "sample.transition.requested", Outcome: AuditOutcomeDenied, Reason: "sample_not_found", Resource: AuditResource{Type: "sample", ID: sampleID}, Details: map[string]any{"requested_status": string(next)}})
 			}
 			return err
-		}
-		if sample.TenantID != scope.TenantID || sample.LabID != scope.LabID {
-			deniedErr = fmt.Errorf("sample %q is outside requested tenant/lab scope", sampleID)
-			return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "sample.transition.requested", Outcome: AuditOutcomeDenied, Reason: "scope_mismatch", Resource: AuditResource{Type: "sample", ID: sampleID}, Details: map[string]any{"requested_status": string(next)}})
 		}
 		if !allowedTransition(sample.Status, next) {
 			deniedErr = fmt.Errorf("transition %s -> %s is not allowed", sample.Status, next)

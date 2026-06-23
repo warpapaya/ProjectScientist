@@ -173,7 +173,7 @@ func TestTenantLabBoundaryScopesReadsWritesAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("beta audit events: %v", err)
 	}
-	if len(betaEvents) != 1 || betaEvents[0].Outcome != AuditOutcomeDenied || betaEvents[0].Reason != "scope_mismatch" {
-		t.Fatalf("beta audit should only include denied cross-scope transition proof: %#v", betaEvents)
+	if len(betaEvents) != 1 || betaEvents[0].Outcome != AuditOutcomeDenied || betaEvents[0].Reason != "sample_not_found" {
+		t.Fatalf("beta audit should only include opaque denied cross-scope transition proof: %#v", betaEvents)
 	}
 }
