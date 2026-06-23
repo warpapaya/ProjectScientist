@@ -55,6 +55,9 @@ type goldenAnalysis struct {
 	Unit           string `json:"unit"`
 	Result         string `json:"result"`
 	Qualifier      string `json:"qualifier"`
+	MDL            string `json:"mdl"`
+	RL             string `json:"rl"`
+	Comments       string `json:"comments"`
 	QCRole         string `json:"qc_role"`
 }
 
@@ -182,6 +185,143 @@ func TestGoldenMigrationDatasetDocumentsParityGapsAndMigrationChecks(t *testing.
 	if !strings.Contains(string(doc), dataset.DatasetID) || !strings.Contains(string(doc), "Expected parity gaps") {
 		t.Fatalf("golden dataset doc does not describe dataset and parity gaps")
 	}
+}
+
+func TestGoldenMigrationDatasetImportsAnalysisResultsWithSnapshotsAndReconciliation(t *testing.T) {
+	dataset := loadGoldenMigrationDataset(t)
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	actor := testActorWithRoles("migration-bot", RoleAdmin, RoleLabManager, RoleAnalyst, RoleReviewer)
+	lineByFixture := seedGoldenAnalysisRequestLines(t, store, dataset, actor)
+
+	rows := make([]ImportRow, 0, len(dataset.Analyses))
+	for _, analysis := range dataset.Analyses {
+		line := lineByFixture[analysis.SampleLegacyID+"|"+analysis.Service]
+		rows = append(rows, ImportRow{
+			"legacy_id":                analysis.SampleLegacyID + "|" + analysis.Service,
+			"analysis_request_line_id": line.ID,
+			"service":                  analysis.Service,
+			"method":                   analysis.Method,
+			"unit":                     analysis.Unit,
+			"result":                   analysis.Result,
+			"qualifier":                analysis.Qualifier,
+			"mdl":                      analysis.MDL,
+			"rl":                       analysis.RL,
+			"comments":                 analysis.Comments,
+		})
+	}
+	payload, err := json.Marshal(rows)
+	if err != nil {
+		t.Fatalf("marshal analysis result rows: %v", err)
+	}
+
+	result, err := store.ImportForScope(DefaultScope, payload, ImportOptions{Format: ImportFormatJSON, Entity: ImportEntityAnalysisResults, Source: "fixtures/golden_migration_dataset.json#analyses"}, actor)
+	if err != nil {
+		t.Fatalf("import golden analysis results: %v", err)
+	}
+	if result.TotalRows != len(dataset.Analyses) || result.CreatedRows != len(dataset.Analyses) || result.SkippedRows != 0 {
+		t.Fatalf("unexpected analysis result import result: %#v", result)
+	}
+	for _, row := range result.Rows {
+		if strings.TrimSpace(row.ID) == "" {
+			t.Fatalf("analysis result import row did not expose created result id: %#v", row)
+		}
+	}
+
+	report, err := store.AnalysisResultImportReconciliationReportForScope(DefaultScope, result, actor)
+	if err != nil {
+		t.Fatalf("reconcile golden analysis results: %v", err)
+	}
+	if report.SourceCount != len(dataset.Analyses) || report.ImportedCount != len(dataset.Analyses) || report.MatchedCount != len(dataset.Analyses) || len(report.MissingRecords) != 0 || len(report.MismatchedRecords) != 0 {
+		t.Fatalf("golden analysis result reconciliation should be clean: %#v", report)
+	}
+	if strings.TrimSpace(report.SourceHash) == "" || strings.TrimSpace(report.ImportedHash) == "" || strings.TrimSpace(report.AuditEventID) == "" {
+		t.Fatalf("reconciliation evidence must include hashes and audit event: %#v", report)
+	}
+
+	results := store.ResultsForScope(DefaultScope)
+	if len(results) != len(dataset.Analyses) {
+		t.Fatalf("expected one persisted result per fixture analysis, got %d", len(results))
+	}
+	seenQualifier, seenLimitPlaceholder, seenComment := false, false, false
+	for _, persisted := range results {
+		line, ok := store.GetAnalysisRequestLineForScope(DefaultScope, persisted.AnalysisRequestLineID)
+		if !ok {
+			t.Fatalf("missing analysis request line for result %#v", persisted)
+		}
+		if line.MethodName == "" || line.CatalogSnapshotID == "" || line.CatalogSnapshotVersion == 0 {
+			t.Fatalf("analysis request line must preserve immutable method/catalog snapshot: %#v", line)
+		}
+		if persisted.Unit == "" || persisted.RawValue == "" {
+			t.Fatalf("result unit and raw value must round-trip: %#v", persisted)
+		}
+		seenQualifier = seenQualifier || persisted.Qualifier != ""
+		seenLimitPlaceholder = seenLimitPlaceholder || persisted.MDL > 0 || persisted.RL > 0
+		seenComment = seenComment || strings.Contains(persisted.Comments, "synthetic")
+		reviewed, err := store.ReviewResultForScope(DefaultScope, persisted.ID, ResultReviewInput{Decision: ResultDecisionAccept, Comments: "migration review accepted", EnforceReviewerSeparation: false}, actor)
+		if err != nil {
+			t.Fatalf("review imported result %s: %v", persisted.ID, err)
+		}
+		if reviewed.Status != ResultStatusAccepted || reviewed.ReviewedBy != actor.UserID {
+			t.Fatalf("imported result did not enter review domain: %#v", reviewed)
+		}
+	}
+	if !seenQualifier || !seenLimitPlaceholder || !seenComment {
+		t.Fatalf("fixture import must preserve at least one qualifier, limit placeholder, and synthetic comment; qualifier=%v limit=%v comment=%v", seenQualifier, seenLimitPlaceholder, seenComment)
+	}
+}
+
+func seedGoldenAnalysisRequestLines(t *testing.T, store *Store, dataset goldenMigrationDataset, actor ActorContext) map[string]AnalysisRequestLine {
+	t.Helper()
+	clientsByLegacy := map[string]Client{}
+	for _, clientFixture := range dataset.Clients {
+		client, err := store.CreateClient(clientFixture.Name, clientFixture.Email, actor)
+		if err != nil {
+			t.Fatalf("seed client %s: %v", clientFixture.LegacyID, err)
+		}
+		clientsByLegacy[clientFixture.LegacyID] = client
+	}
+	dept, err := store.CreateCatalogDepartment(CatalogDepartmentInput{Name: "Synthetic Migration"}, actor)
+	if err != nil {
+		t.Fatalf("seed department: %v", err)
+	}
+	serviceIDByKey := map[string]string{}
+	for i, analysis := range dataset.Analyses {
+		unit, err := store.CreateCatalogUnit(CatalogUnitInput{Name: "Synthetic " + analysis.Unit, Symbol: analysis.Unit}, actor)
+		if err != nil {
+			t.Fatalf("seed unit %s: %v", analysis.Unit, err)
+		}
+		method, err := store.CreateCatalogMethod(CatalogMethodInput{Name: analysis.Method, Description: "synthetic fixture method snapshot"}, actor)
+		if err != nil {
+			t.Fatalf("seed method %s: %v", analysis.Method, err)
+		}
+		service, err := store.CreateAnalysisService(AnalysisServiceInput{Name: analysis.Service, DepartmentID: dept.ID, MethodID: method.ID, UnitID: unit.ID, SortOrder: i + 1}, actor)
+		if err != nil {
+			t.Fatalf("seed service %s: %v", analysis.Service, err)
+		}
+		serviceIDByKey[analysis.SampleLegacyID+"|"+analysis.Service] = service.ID
+	}
+	lineByFixture := map[string]AnalysisRequestLine{}
+	for _, sampleFixture := range dataset.Samples {
+		client := clientsByLegacy[sampleFixture.ClientLegacyID]
+		serviceIDs := []string{}
+		for _, analysis := range dataset.Analyses {
+			if analysis.SampleLegacyID == sampleFixture.LegacyID {
+				serviceIDs = append(serviceIDs, serviceIDByKey[analysis.SampleLegacyID+"|"+analysis.Service])
+			}
+		}
+		sample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: sampleFixture.FamilyID, ClientSampleID: sampleFixture.ClientSampleID, Matrix: sampleFixture.Matrix, AnalysisServiceIDs: serviceIDs, Comments: "synthetic legacy_id=" + sampleFixture.LegacyID}, actor)
+		if err != nil {
+			t.Fatalf("seed sample %s: %v", sampleFixture.LegacyID, err)
+		}
+		for _, line := range store.AnalysisRequestLinesForSample(sample.ID) {
+			lineByFixture[sampleFixture.LegacyID+"|"+line.Name] = line
+		}
+	}
+	return lineByFixture
 }
 
 func loadGoldenMigrationDataset(t *testing.T) goldenMigrationDataset {
