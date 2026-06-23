@@ -87,7 +87,9 @@ var qcSampleTaxonomy = []QCSampleDefinition{
 
 func QCSampleTaxonomy() []QCSampleDefinition {
 	out := make([]QCSampleDefinition, len(qcSampleTaxonomy))
-	copy(out, qcSampleTaxonomy)
+	for i, def := range qcSampleTaxonomy {
+		out[i] = cloneQCSampleDefinition(def)
+	}
 	return out
 }
 
@@ -95,10 +97,19 @@ func QCDefinitionForKind(kind QCSampleKind) (QCSampleDefinition, bool) {
 	kind = normalizeQCSampleKind(kind)
 	for _, def := range qcSampleTaxonomy {
 		if def.Kind == kind {
-			return def, true
+			return cloneQCSampleDefinition(def), true
 		}
 	}
 	return QCSampleDefinition{}, false
+}
+
+func cloneQCSampleDefinition(def QCSampleDefinition) QCSampleDefinition {
+	if len(def.AllowedRelationshipTypes) > 0 {
+		allowed := make([]QCRelationshipType, len(def.AllowedRelationshipTypes))
+		copy(allowed, def.AllowedRelationshipTypes)
+		def.AllowedRelationshipTypes = allowed
+	}
+	return def
 }
 
 func (s *Store) CreateQCSampleRelationship(input CreateQCSampleRelationshipInput, actor ActorContext) (QCSampleRelationship, error) {
@@ -147,6 +158,7 @@ func (s *Store) CreateQCSampleRelationshipForScope(scope Scope, input CreateQCSa
 				return fmt.Errorf("method: %w", err)
 			}
 		}
+		var analysisLine *AnalysisRequestLine
 		if input.AnalysisRequestLine != "" {
 			line, err := analysisRequestLineByIDTx(tx, input.AnalysisRequestLine)
 			if err != nil {
@@ -161,6 +173,10 @@ func (s *Store) CreateQCSampleRelationshipForScope(scope Scope, input CreateQCSa
 			if input.RelatedSampleID != "" && line.SampleID != input.RelatedSampleID {
 				return fmt.Errorf("analysis request line %q belongs to sample %q, not related sample %q", input.AnalysisRequestLine, line.SampleID, input.RelatedSampleID)
 			}
+			analysisLine = &line
+		}
+		if err := validateQCSampleRelationshipTargetShape(input, analysisLine); err != nil {
+			return err
 		}
 		next, err := nextCounter(tx, "next_qc_sample_relationship")
 		if err != nil {
@@ -272,6 +288,26 @@ func relationshipTypeAllowed(def QCSampleDefinition, relType QCRelationshipType)
 		}
 	}
 	return false
+}
+
+func validateQCSampleRelationshipTargetShape(input CreateQCSampleRelationshipInput, analysisLine *AnalysisRequestLine) error {
+	hasSource := input.RelatedSampleID != "" || input.AnalysisRequestLine != ""
+	hasMethod := input.MethodID != "" || (analysisLine != nil && strings.TrimSpace(analysisLine.MethodID) != "")
+	switch input.RelationshipType {
+	case QCRelationshipTypeDuplicateOf, QCRelationshipTypeSpikeOf:
+		if !hasSource {
+			return fmt.Errorf("relationship type %q requires related sample or analysis request line", input.RelationshipType)
+		}
+	case QCRelationshipTypeCalibrationForMethod, QCRelationshipTypeControlForMethod:
+		if !hasMethod {
+			return fmt.Errorf("relationship type %q requires method or method-bearing analysis request line", input.RelationshipType)
+		}
+	case QCRelationshipTypeBatchControl:
+		if input.BatchID == "" {
+			return fmt.Errorf("relationship type %q requires batch id", input.RelationshipType)
+		}
+	}
+	return nil
 }
 
 func requireSampleInScopeTx(tx *sql.Tx, scope Scope, sampleID string) error {
