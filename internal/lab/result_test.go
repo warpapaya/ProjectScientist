@@ -130,6 +130,68 @@ func TestResultValidationRejectsMissingAndInvalidFields(t *testing.T) {
 	}
 }
 
+func TestResultLookupByAnalysisRequestLineRespectsScope(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	actor := testActor("chemist")
+	client, err := store.CreateClient("Result Lookup", "lookup@example.test", actor)
+	if err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	sample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "Lookup", Matrix: "Water", Tests: []string{"Nitrate"}}, actor)
+	if err != nil {
+		t.Fatalf("create sample: %v", err)
+	}
+	lines := store.AnalysisRequestLinesForSample(sample.ID)
+	if len(lines) != 1 {
+		t.Fatalf("expected one analysis request line, got %#v", lines)
+	}
+	created, err := store.CreateResult(ResultInput{AnalysisRequestLineID: lines[0].ID, Value: 1.2, RawValue: "1.2 mg/L", Unit: "mg/L", Dilution: 1, AnalystID: "analyst-lookup"}, actor)
+	if err != nil {
+		t.Fatalf("create result: %v", err)
+	}
+
+	loaded, ok := store.GetResultForAnalysisRequestLine(lines[0].ID)
+	if !ok || loaded.ID != created.ID || loaded.SampleID != sample.ID {
+		t.Fatalf("result lookup by analysis request line failed, ok=%v loaded=%#v", ok, loaded)
+	}
+	if _, ok := store.GetResultForAnalysisRequestLineForScope(Scope{TenantID: "other-tenant", LabID: DefaultLabID}, lines[0].ID); ok {
+		t.Fatalf("cross-tenant result lookup should not return a result")
+	}
+}
+
+func TestResultEntryRejectsCancelledAnalysisRequestLines(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	actor := testActor("chemist")
+	client, err := store.CreateClient("Cancelled Line", "cancelled@example.test", actor)
+	if err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	sample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "Cancelled", Matrix: "Water", Tests: []string{"Nitrate"}}, actor)
+	if err != nil {
+		t.Fatalf("create sample: %v", err)
+	}
+	lines := store.AnalysisRequestLinesForSample(sample.ID)
+	if len(lines) != 1 {
+		t.Fatalf("expected one analysis request line, got %#v", lines)
+	}
+	if err := store.TransitionAnalysisRequestLine(lines[0].ID, AnalysisRequestLineStatusCancelled, actor); err != nil {
+		t.Fatalf("cancel analysis request line: %v", err)
+	}
+	if _, err := store.CreateResult(ResultInput{AnalysisRequestLineID: lines[0].ID, Value: 1.2, RawValue: "1.2 mg/L", Unit: "mg/L", Dilution: 1}, actor); err == nil || !strings.Contains(err.Error(), "cancelled") {
+		t.Fatalf("expected cancelled analysis request line rejection, got %v", err)
+	}
+}
+
 func assertAuditAction(t *testing.T, events []AuditEvent, action, id string) {
 	t.Helper()
 	for _, event := range events {
