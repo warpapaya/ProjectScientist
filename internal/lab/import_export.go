@@ -26,6 +26,7 @@ const (
 )
 
 const ImportEntityClients = "clients"
+const ImportEntityAnalysisResults = "analysis_results"
 
 const (
 	ReconciliationActionCreate = "create"
@@ -123,6 +124,9 @@ func (s *Store) ImportForScope(scope Scope, payload []byte, opts ImportOptions, 
 	}
 	if opts.DryRun || len(rows) == 0 {
 		return result, nil
+	}
+	if opts.Entity == ImportEntityAnalysisResults {
+		return s.importAnalysisResultsForScope(scope, rows, opts, result, actor)
 	}
 
 	s.mu.Lock()
@@ -266,14 +270,43 @@ func decodeRowsJSON(payload []byte) ([]ImportRow, error) {
 }
 
 func validateImportRows(entity string, rows []ImportRow) []ImportValidationError {
-	if entity != ImportEntityClients {
+	switch entity {
+	case ImportEntityClients:
+		return validateClientImportRows(rows)
+	case ImportEntityAnalysisResults:
+		return validateAnalysisResultImportRows(rows)
+	default:
 		return []ImportValidationError{{Row: 0, Field: "entity", Message: fmt.Sprintf("unsupported import entity %q", entity)}}
 	}
+}
+
+func validateClientImportRows(rows []ImportRow) []ImportValidationError {
 	out := []ImportValidationError{}
 	for i, row := range rows {
 		rowNum := i + 1
 		if strings.TrimSpace(row["name"]) == "" {
 			out = append(out, ImportValidationError{Row: rowNum, Field: "name", Message: "name is required"})
+		}
+	}
+	return out
+}
+
+func validateAnalysisResultImportRows(rows []ImportRow) []ImportValidationError {
+	out := []ImportValidationError{}
+	for i, row := range rows {
+		rowNum := i + 1
+		for _, field := range []string{"analysis_request_line_id", "service", "method", "unit", "result"} {
+			if strings.TrimSpace(row[field]) == "" {
+				out = append(out, ImportValidationError{Row: rowNum, Field: field, Message: field + " is required"})
+			}
+		}
+		for _, field := range []string{"mdl", "rl"} {
+			if value := strings.TrimSpace(row[field]); value != "" {
+				parsed, err := strconv.ParseFloat(value, 64)
+				if err != nil || parsed < 0 {
+					out = append(out, ImportValidationError{Row: rowNum, Field: field, Message: field + " must be a non-negative number"})
+				}
+			}
 		}
 	}
 	return out
@@ -602,4 +635,97 @@ func columnIndex(ref string) int {
 
 func xmlEscape(value string) string {
 	return html.EscapeString(value)
+}
+
+func (s *Store) importAnalysisResultsForScope(scope Scope, rows []ImportRow, opts ImportOptions, result ImportResult, actor ActorContext) (ImportResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	err := s.withTx(func(tx *sql.Tx) error {
+		allowed, authErr := authorizeOperationTx(tx, scope, OperationImportRun, actor, AuditResource{Type: "import", ID: opts.Source}, map[string]any{"entity": opts.Entity, "format": string(opts.Format), "row_count": len(rows)})
+		if authErr != nil {
+			return authErr
+		}
+		if !allowed {
+			return ErrAuthorizationDenied
+		}
+		for i := range result.Rows {
+			if result.Rows[i].Action == ReconciliationActionSkip {
+				continue
+			}
+			created, err := insertImportedAnalysisResultTx(tx, scope, rows[i], actor)
+			if err != nil {
+				return fmt.Errorf("row %d: %w", i+1, err)
+			}
+			result.Rows[i].ID = created.ID
+			if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "analysis_result.imported", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "result", ID: created.ID}, Details: map[string]any{"source": opts.Source, "row": i + 1, "legacy_id": rows[i]["legacy_id"], "analysis_request_line_id": created.AnalysisRequestLineID, "unit": created.Unit, "qualifier": created.Qualifier, "mdl": created.MDL, "rl": created.RL}}); err != nil {
+				return err
+			}
+		}
+		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "import.completed", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "import", ID: opts.Source}, Details: map[string]any{"entity": opts.Entity, "format": string(opts.Format), "source": opts.Source, "total_rows": result.TotalRows, "created_rows": result.CreatedRows, "skipped_rows": result.SkippedRows}})
+	})
+	if err != nil {
+		return ImportResult{}, err
+	}
+	return result, nil
+}
+
+func insertImportedAnalysisResultTx(tx *sql.Tx, scope Scope, row ImportRow, actor ActorContext) (Result, error) {
+	line, err := analysisRequestLineByIDTx(tx, row["analysis_request_line_id"])
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Result{}, fmt.Errorf("unknown analysis request line %q", row["analysis_request_line_id"])
+		}
+		return Result{}, err
+	}
+	if line.TenantID != scope.TenantID || line.LabID != scope.LabID {
+		return Result{}, fmt.Errorf("analysis request line %q is outside requested tenant/lab scope", line.ID)
+	}
+	if line.Status == AnalysisRequestLineStatusCancelled {
+		return Result{}, fmt.Errorf("cannot import result for cancelled analysis request line %q", line.ID)
+	}
+	if service := strings.TrimSpace(row["service"]); !strings.EqualFold(service, strings.TrimSpace(line.Name)) {
+		return Result{}, fmt.Errorf("service %q does not match analysis request line %q service %q", service, line.ID, line.Name)
+	}
+	if method := strings.TrimSpace(row["method"]); method != "" && line.MethodName != "" && method != line.MethodName {
+		return Result{}, fmt.Errorf("method %q does not match immutable analysis request line %q method snapshot %q", method, line.ID, line.MethodName)
+	}
+	next, err := nextCounter(tx, "next_result")
+	if err != nil {
+		return Result{}, err
+	}
+	now := time.Now().UTC()
+	rawValue := strings.TrimSpace(row["result"])
+	value := parseImportedResultValue(rawValue)
+	mdl := parseOptionalNonNegativeFloat(row["mdl"])
+	rl := parseOptionalNonNegativeFloat(row["rl"])
+	input := ResultInput{AnalysisRequestLineID: line.ID, Value: value, RawValue: rawValue, Unit: row["unit"], Qualifier: row["qualifier"], MDL: mdl, RL: rl, Dilution: 1, Comments: row["comments"], AnalystID: normalizeActorContext(actor, "migration-import").UserID}
+	input = normalizeResultInput(input)
+	if err := validateResultInput(input, true); err != nil {
+		return Result{}, err
+	}
+	created := resultFromInput(scope, fmt.Sprintf("R-%06d", next), line.SampleID, input, now)
+	if _, err := tx.Exec(`INSERT INTO results(id, tenant_id, lab_id, sample_id, analysis_request_line_id, value, raw_value, unit, qualifier, mdl, rl, loq, dilution, uncertainty, comments, analyst_id, instrument_id, status, reviewed_by, review_comments, reviewed_at, reopen_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, created.ID, created.TenantID, created.LabID, created.SampleID, created.AnalysisRequestLineID, created.Value, created.RawValue, created.Unit, created.Qualifier, created.MDL, created.RL, created.LOQ, created.Dilution, created.Uncertainty, created.Comments, created.AnalystID, created.InstrumentID, string(created.Status), created.ReviewedBy, created.ReviewComments, formatOptionalTime(created.ReviewedAt), created.ReopenReason, formatTime(created.CreatedAt), formatTime(created.UpdatedAt)); err != nil {
+		return Result{}, err
+	}
+	return created, nil
+}
+
+func parseImportedResultValue(raw string) float64 {
+	fields := strings.Fields(strings.TrimSpace(raw))
+	if len(fields) == 0 {
+		return 0
+	}
+	value, err := strconv.ParseFloat(strings.Trim(fields[0], "<>="), 64)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+func parseOptionalNonNegativeFloat(raw string) float64 {
+	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || value < 0 {
+		return 0
+	}
+	return value
 }
