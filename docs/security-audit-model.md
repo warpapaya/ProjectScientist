@@ -246,11 +246,22 @@ Required model:
 - Audit read/export is permissioned and tenant-scoped.
 - Retention, legal hold, redaction, encryption at rest, and backup handling are documented.
 
+Implemented v1 lab-test behavior (PSC-RM-084):
+
+- `docs/audit-privacy-retention-policy.md` documents the synthetic lab-development retention, legal hold, redaction, encrypted-backup/readback, and operator-access policy.
+- `DefaultAuditPrivacyPolicy` sets a 397-day synthetic-lane retention window and audit read/export role expectations.
+- `EvaluateAuditRetention` returns `keep`, `purge`, or `legal_hold`; active named legal holds override expired retention windows.
+- `RedactAuditEventForDisclosure` creates a redacted disclosure copy without mutating canonical audit rows, preserving provenance and safe hashes while stripping actor/customer/raw-payload fields.
+- `EncryptBackupFile` and `VerifyEncryptedBackupReadback` provide a local AES-256-GCM encrypted-backup proof with ciphertext checksum, decrypt/readback validation, and tamper rejection. This is not a production KMS/WORM design.
+
 Acceptance tests:
 
 - Secret/credential-like values are rejected or redacted before audit write.
 - Unauthorized audit view/export is denied and audited.
 - Tenant-scoped audit export cannot include another tenant's records.
+- Retention windows and legal-hold override behavior are covered by `TestAuditRetentionHonorsWindowAndLegalHold`.
+- Redacted disclosure copies preserve non-secret provenance and remove actor/raw/customer detail fields in `TestAuditRedactionWorkflowPreservesNonSecretProvenance`.
+- Encrypted backup readback and ciphertext tamper rejection are covered by `TestEncryptedBackupProofRoundTripAndTamperDetection`.
 
 ### 12. Operational backup/restore gate
 
