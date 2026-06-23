@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func insertImportedSampleTx(tx *sql.Tx, scope Scope, row ImportRow, actor ActorContext, source string, rowNum int) (Sample, error) {
+func insertImportedSampleTx(tx *sql.Tx, scope Scope, row ImportRow, actor ActorContext, source string, rowNum int, payloadHash string, sourceHash string) (Sample, error) {
 	matrixID, matrixName, err := ensureSampleReferenceTx(tx, scope, SampleReferenceMatrix, row["matrix"])
 	if err != nil {
 		return Sample{}, err
@@ -89,7 +89,7 @@ func insertImportedSampleTx(tx *sql.Tx, scope Scope, row ImportRow, actor ActorC
 	if err := createAnalysisRequestLinesForSampleTx(tx, scope, sample); err != nil {
 		return Sample{}, err
 	}
-	if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "sample.imported", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "sample", ID: sample.ID}, Details: map[string]any{"source": source, "row": rowNum, "legacy_id": row["legacy_id"], "client_sample_id": sample.ClientSampleID, "lab_sample_id": sample.LabSampleID, "container_count": len(sample.Containers), "custody_event_count": len(stringSliceFromJSON(row["custody_events_json"]))}}); err != nil {
+	if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "sample.imported", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "sample", ID: sample.ID}, Details: map[string]any{"source": source, "row": rowNum, "source_hash": sourceHash, "payload_hash": payloadHash, "container_count": len(sample.Containers), "custody_event_count": len(stringSliceFromJSON(row["custody_events_json"]))}}); err != nil {
 		return Sample{}, err
 	}
 	custodyEvents, err := insertImportedCustodyEventsTx(tx, scope, sample, stringSliceFromJSON(row["custody_events_json"]), actor)

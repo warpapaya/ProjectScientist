@@ -126,8 +126,10 @@ func (s *Store) ImportForScope(scope Scope, payload []byte, opts ImportOptions, 
 	if opts.DryRun || len(rows) == 0 {
 		return result, nil
 	}
+	payloadHash := auditBytesHash(payload)
+	sourceHash := auditStringHash(opts.Source)
 	if opts.Entity == ImportEntityAnalysisResults {
-		return s.importAnalysisResultsForScope(scope, rows, opts, result, actor)
+		return s.importAnalysisResultsForScope(scope, rows, opts, result, actor, payloadHash, sourceHash)
 	}
 
 	s.mu.Lock()
@@ -151,18 +153,18 @@ func (s *Store) ImportForScope(scope Scope, payload []byte, opts ImportOptions, 
 					return err
 				}
 				result.Rows[i].ID = client.ID
-				if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "client.imported", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "client", ID: client.ID}, Details: map[string]any{"source": opts.Source, "row": i + 1, "legacy_id": rows[i]["legacy_id"], "name": client.Name}}); err != nil {
+				if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "client.imported", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "client", ID: client.ID}, Details: map[string]any{"source": opts.Source, "row": i + 1, "source_hash": sourceHash, "payload_hash": payloadHash, "mapping_id": "client-import-v1"}}); err != nil {
 					return err
 				}
 			case ImportEntitySamples:
-				sample, err := insertImportedSampleTx(tx, scope, rows[i], actor, opts.Source, i+1)
+				sample, err := insertImportedSampleTx(tx, scope, rows[i], actor, opts.Source, i+1, payloadHash, sourceHash)
 				if err != nil {
 					return err
 				}
 				result.Rows[i].ID = sample.ID
 			}
 		}
-		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "import.completed", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "import", ID: opts.Source}, Details: map[string]any{"entity": opts.Entity, "format": string(opts.Format), "source": opts.Source, "total_rows": result.TotalRows, "created_rows": result.CreatedRows, "skipped_rows": result.SkippedRows}})
+		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "import.completed", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "import", ID: opts.Source}, Details: map[string]any{"entity": opts.Entity, "format": string(opts.Format), "source": opts.Source, "source_hash": sourceHash, "payload_hash": payloadHash, "total_rows": result.TotalRows, "created_rows": result.CreatedRows, "skipped_rows": result.SkippedRows}})
 	})
 	if err != nil {
 		return ImportResult{}, err
@@ -699,7 +701,7 @@ func xmlEscape(value string) string {
 	return html.EscapeString(value)
 }
 
-func (s *Store) importAnalysisResultsForScope(scope Scope, rows []ImportRow, opts ImportOptions, result ImportResult, actor ActorContext) (ImportResult, error) {
+func (s *Store) importAnalysisResultsForScope(scope Scope, rows []ImportRow, opts ImportOptions, result ImportResult, actor ActorContext, payloadHash string, sourceHash string) (ImportResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	err := s.withTx(func(tx *sql.Tx) error {
@@ -719,11 +721,11 @@ func (s *Store) importAnalysisResultsForScope(scope Scope, rows []ImportRow, opt
 				return fmt.Errorf("row %d: %w", i+1, err)
 			}
 			result.Rows[i].ID = created.ID
-			if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "analysis_result.imported", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "result", ID: created.ID}, Details: map[string]any{"source": opts.Source, "row": i + 1, "legacy_id": rows[i]["legacy_id"], "analysis_request_line_id": created.AnalysisRequestLineID, "unit": created.Unit, "qualifier": created.Qualifier, "mdl": created.MDL, "rl": created.RL}}); err != nil {
+			if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "analysis_result.imported", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "result", ID: created.ID}, Details: map[string]any{"source": opts.Source, "row": i + 1, "source_hash": sourceHash, "payload_hash": payloadHash, "analysis_request_line_id": created.AnalysisRequestLineID}}); err != nil {
 				return err
 			}
 		}
-		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "import.completed", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "import", ID: opts.Source}, Details: map[string]any{"entity": opts.Entity, "format": string(opts.Format), "source": opts.Source, "total_rows": result.TotalRows, "created_rows": result.CreatedRows, "skipped_rows": result.SkippedRows}})
+		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "import.completed", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "import", ID: opts.Source}, Details: map[string]any{"entity": opts.Entity, "format": string(opts.Format), "source": opts.Source, "source_hash": sourceHash, "payload_hash": payloadHash, "total_rows": result.TotalRows, "created_rows": result.CreatedRows, "skipped_rows": result.SkippedRows}})
 	})
 	if err != nil {
 		return ImportResult{}, err
