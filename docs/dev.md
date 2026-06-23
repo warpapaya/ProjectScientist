@@ -67,7 +67,7 @@ make docker-smoke COMPOSE_PROJECT_NAME=project-scientist-$USER-a DEV_PORT=18097
 make dev-down COMPOSE_PROJECT_NAME=project-scientist-$USER-a DEV_PORT=18097
 ```
 
-`make docker-test` automatically runs under `<COMPOSE_PROJECT_NAME>-test`, so one-off test containers/networks do not share the long-running dev project. `make docker-smoke` runs under `<COMPOSE_PROJECT_NAME>-smoke`, defaults to loopback port `18097`, and sets `PSC_DATA_DIR=/tmp/project-scientist-smoke-data` inside the container. That makes repeat smoke runs independent from any preserved local named development volume, including a volume intentionally kept for forensic review after a failed audit-verification experiment.
+`make docker-test` automatically runs under `<COMPOSE_PROJECT_NAME>-test`, so one-off test containers/networks do not share the long-running dev project. `make docker-smoke` runs under `<COMPOSE_PROJECT_NAME>-smoke`, defaults to loopback port `18097`, sets `PSC_DATA_DIR=/tmp/project-scientist-smoke-data` inside the container, and removes only the smoke project's named volume on start/exit. That makes repeat smoke runs independent from any preserved local named development volume, including a volume intentionally kept for forensic review after a failed audit-verification experiment.
 
 Stop the local container without deleting the named data volume:
 
@@ -117,7 +117,7 @@ make docker-smoke
 make dev-down
 ```
 
-`make docker-smoke` starts an isolated smoke Compose project, waits for `/healthz`, seeds synthetic demo data through the public local API, verifies `/api/state` contains the synthetic lab, and then stops the smoke container/network through an exit trap. It intentionally uses container-local temp storage instead of the named development data volume so a preserved lab volume is never deleted or rewritten just to make smoke pass. The seed path is API-level so it exercises the running container instead of mutating files directly.
+`make docker-smoke` starts an isolated smoke Compose project, waits for `/healthz`, seeds synthetic demo data through the public local API, verifies `/api/state` contains the synthetic lab, runs the MVP vertical-slice CLI smoke against the smoke project volume, and then removes the smoke-only container/network/volume through an exit trap. It intentionally uses container-local temp storage and a disposable smoke volume instead of the named development data volume so a preserved lab volume is never deleted or rewritten just to make smoke pass. The seed path is API-level so it exercises the running container instead of mutating files directly.
 
 ## Deterministic local demo seed/reset
 

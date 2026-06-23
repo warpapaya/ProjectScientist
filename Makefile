@@ -40,8 +40,8 @@ docker-build:
 
 docker-smoke:
 	@set -e; \
-		trap '$(COMPOSE_SMOKE_RUN) down --remove-orphans >/dev/null 2>&1 || true' EXIT; \
-		$(COMPOSE_SMOKE_RUN) down --remove-orphans >/dev/null 2>&1 || true; \
+		trap '$(COMPOSE_SMOKE_RUN) down --volumes --remove-orphans >/dev/null 2>&1 || true' EXIT; \
+		$(COMPOSE_SMOKE_RUN) down --volumes --remove-orphans >/dev/null 2>&1 || true; \
 		$(COMPOSE_SMOKE_RUN) up --build -d project-scientist; \
 		./scripts/wait-health.sh $(SMOKE_BASE_URL)/healthz; \
 		./scripts/dev-seed.sh $(SMOKE_BASE_URL); \
