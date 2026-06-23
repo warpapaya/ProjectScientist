@@ -172,7 +172,7 @@ Blockers:
 
 ## Implementation child-card recommendations
 
-Recommended follow-up cards should remain synthetic-only until Petie/Friday explicitly approves customer data, external staging, or customer-facing claims.
+Recommended follow-up cards should remain synthetic-only until Petie/Friday explicitly approves customer data, external staging, or customer-facing communications.
 
 - Data-bound smoke package proof: Generate COA/COC, CSV EDD, and narrative/manifest outputs from migrated synthetic sample/result/QC/custody models instead of static/scripted fixture text.
 - Post-remediation matrix refresh: Re-run the smoke matrix after merged sample/custody, result, QC, and report-package remediation work and downgrade only blockers with executable evidence.
