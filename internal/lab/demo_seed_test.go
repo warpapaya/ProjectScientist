@@ -87,6 +87,27 @@ func TestResetAndSeedSyntheticDemoIsDeterministicAndFixtureBacked(t *testing.T) 
 	}
 }
 
+func TestResetAndSeedSyntheticDemoClearsExistingWorksheets(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	actor := demoSeedAdminActorForTest()
+	lines := createWorksheetLineFixtures(t, store, actor, "EPA 200.8", "Metals", "Lead")
+	if _, err := store.CreateWorksheet(CreateWorksheetInput{AnalysisRequestLineIDs: []string{lines[0].ID}, BatchID: "BATCH-RESET", AnalystID: "analyst-reset"}, actor); err != nil {
+		t.Fatalf("create worksheet: %v", err)
+	}
+
+	fixturePath := filepath.Join("..", "..", "fixtures", "mvp_synthetic_lab.json")
+	if _, err := store.ResetAndSeedSyntheticDemo(fixturePath, actor); err != nil {
+		t.Fatalf("reset/seed with existing worksheet: %v", err)
+	}
+	if worksheets := store.Worksheets(); len(worksheets) != 0 {
+		t.Fatalf("expected worksheets cleared by demo reset, got %#v", worksheets)
+	}
+}
+
 func assertDemoSeedSummary(t *testing.T, summary SyntheticDemoSeedSummary) {
 	t.Helper()
 	if summary.FixtureID != "psc-mvp-synthetic-lab-v1" {

@@ -449,6 +449,27 @@ var sqliteMigrations = []string{
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	);`,
+	`CREATE TABLE IF NOT EXISTS worksheets (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		batch_id TEXT NOT NULL DEFAULT '',
+		department_id TEXT NOT NULL DEFAULT '',
+		department_name TEXT NOT NULL DEFAULT '',
+		method_id TEXT NOT NULL DEFAULT '',
+		method_name TEXT NOT NULL DEFAULT '',
+		analyst_id TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS worksheet_lines (
+		worksheet_id TEXT NOT NULL REFERENCES worksheets(id) ON DELETE CASCADE,
+		analysis_request_line_id TEXT NOT NULL REFERENCES analysis_request_lines(id),
+		created_at TEXT NOT NULL,
+		PRIMARY KEY(worksheet_id, analysis_request_line_id),
+		UNIQUE(analysis_request_line_id)
+	);`,
 	`CREATE TABLE IF NOT EXISTS sample_intake_templates (
 		id TEXT PRIMARY KEY,
 		tenant_id TEXT NOT NULL,
@@ -559,7 +580,7 @@ var sqliteMigrations = []string{
 		created_at TEXT NOT NULL,
 		UNIQUE(tenant_id, lab_id, method_id, matrix_key, analyte_key, version)
 	);`,
-	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('next_analysis_request_line', '1'), ('next_sample_intake_template', '1'), ('next_qc_sample_relationship', '1'), ('next_custody_event', '1'), ('next_qc_batch', '1'), ('next_qc_item', '1'), ('next_qc_relationship', '1'), ('next_qc_limit_rule', '1'), ('last_hash', '');`,
+	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_worksheet', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('next_analysis_request_line', '1'), ('next_sample_intake_template', '1'), ('next_qc_sample_relationship', '1'), ('next_custody_event', '1'), ('next_qc_batch', '1'), ('next_qc_item', '1'), ('next_qc_relationship', '1'), ('next_qc_limit_rule', '1'), ('last_hash', '');`,
 	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (8, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
 }
 
@@ -584,6 +605,8 @@ var sqlitePostMigrationIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_sample_reference_scope_kind_order ON sample_reference_items(tenant_id, lab_id, kind, active, sort_order, name);`,
 	`CREATE INDEX IF NOT EXISTS idx_catalog_snapshots_scope_version ON catalog_snapshots(tenant_id, lab_id, version);`,
 	`CREATE INDEX IF NOT EXISTS idx_analysis_request_lines_scope_sample ON analysis_request_lines(tenant_id, lab_id, sample_id);`,
+	`CREATE INDEX IF NOT EXISTS idx_worksheets_scope_batch ON worksheets(tenant_id, lab_id, batch_id, department_id, method_id, status);`,
+	`CREATE INDEX IF NOT EXISTS idx_worksheet_lines_line ON worksheet_lines(analysis_request_line_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_sample_intake_templates_scope_client ON sample_intake_templates(tenant_id, lab_id, client_id, name);`,
 	`CREATE INDEX IF NOT EXISTS idx_qc_sample_relationships_scope_qc ON qc_sample_relationships(tenant_id, lab_id, qc_sample_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_qc_sample_relationships_scope_related ON qc_sample_relationships(tenant_id, lab_id, related_sample_id);`,
