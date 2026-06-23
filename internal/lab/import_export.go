@@ -124,6 +124,8 @@ func (s *Store) ImportForScope(scope Scope, payload []byte, opts ImportOptions, 
 	if opts.DryRun || len(rows) == 0 {
 		return result, nil
 	}
+	payloadHash := auditBytesHash(payload)
+	sourceHash := auditStringHash(opts.Source)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -144,11 +146,11 @@ func (s *Store) ImportForScope(scope Scope, payload []byte, opts ImportOptions, 
 				return err
 			}
 			result.Rows[i].ID = client.ID
-			if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "client.imported", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "client", ID: client.ID}, Details: map[string]any{"source": opts.Source, "row": i + 1, "legacy_id": rows[i]["legacy_id"], "name": client.Name}}); err != nil {
+			if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "client.imported", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "client", ID: client.ID}, Details: map[string]any{"source": opts.Source, "row": i + 1, "source_hash": sourceHash, "payload_hash": payloadHash}}); err != nil {
 				return err
 			}
 		}
-		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "import.completed", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "import", ID: opts.Source}, Details: map[string]any{"entity": opts.Entity, "format": string(opts.Format), "source": opts.Source, "total_rows": result.TotalRows, "created_rows": result.CreatedRows, "skipped_rows": result.SkippedRows}})
+		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "import.completed", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "import", ID: opts.Source}, Details: map[string]any{"entity": opts.Entity, "format": string(opts.Format), "source": opts.Source, "source_hash": sourceHash, "payload_hash": payloadHash, "total_rows": result.TotalRows, "created_rows": result.CreatedRows, "skipped_rows": result.SkippedRows}})
 	})
 	if err != nil {
 		return ImportResult{}, err
