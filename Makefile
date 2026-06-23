@@ -1,4 +1,4 @@
-.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke performance-concurrency-smoke backup-restore-proof image-review dev-up dev-down dev-clean-projects dev-clean-by-name dev-reset dev-seed demo-reset mvp-vertical-slice
+.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke performance-concurrency-smoke backup-restore-proof image-review dev-up dev-down dev-clean-projects dev-clean-by-name dev-reset dev-seed demo-reset mvp-vertical-slice mvp-verify-suite
 
 WORKTREE_SLUG ?= $(shell basename "$$(pwd)" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]_.-' '-' | sed 's/^-//;s/-$$//')
 COMPOSE_PROJECT_NAME ?= project-scientist-$(WORKTREE_SLUG)
@@ -55,6 +55,7 @@ docker-smoke:
 			--data-urlencode attachment_content_text='synthetic COC smoke attachment' \
 			$(SMOKE_BASE_URL)/api/samples/S-000001/coc-package | grep -q '"content_hash":"sha256:'; \
 		$(COMPOSE_SMOKE_RUN) exec -T project-scientist /app/project-scientist mvp vertical-slice --db /data/project-scientist-mvp.db | grep -q 'mvp vertical-slice ok'; \
+		$(COMPOSE_SMOKE_RUN) exec -T project-scientist /app/project-scientist mvp verify-suite --db /data/project-scientist-mvp-suite.db --artifacts /tmp/mvp-verification | grep -q 'mvp verify-suite ok'; \
 		printf 'docker smoke ok\n'
 
 performance-concurrency-smoke:
@@ -98,5 +99,8 @@ dev-seed:
 
 mvp-vertical-slice:
 	@go run ./cmd/project-scientist mvp vertical-slice --db "$${PSC_MVP_DB:-data/project-scientist-mvp.db}"
+
+mvp-verify-suite:
+	@go run ./cmd/project-scientist mvp verify-suite --db "$${PSC_MVP_DB:-data/project-scientist-mvp.db}" --artifacts "$${PSC_MVP_ARTIFACTS:-artifacts/mvp-verification}"
 
 demo-reset: dev-up dev-seed

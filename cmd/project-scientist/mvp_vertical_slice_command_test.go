@@ -15,7 +15,7 @@ func TestMVPVerticalSliceCommandRunsLocalSyntheticFlow(t *testing.T) {
 		t.Fatalf("mvp vertical-slice command failed: %v stderr=%s", err, stderr.String())
 	}
 	out := stdout.String()
-	for _, want := range []string{"mvp vertical-slice ok", "sample=", "report_artifact=", "denied_controls=3"} {
+	for _, want := range []string{"mvp vertical-slice ok", "sample=", "report_artifact=", "denied_controls=5"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("command output missing %q: %s", want, out)
 		}

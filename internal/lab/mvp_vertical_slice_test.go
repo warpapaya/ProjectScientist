@@ -61,8 +61,11 @@ func TestMVPVerticalSliceRunsSyntheticLIMSHappyPathAndNegativeControls(t *testin
 	if summary.Sample.Status != StatusReleased {
 		t.Fatalf("sample should be released after review/QC/report preconditions, got %#v", summary.Sample)
 	}
-	if len(summary.DeniedControls) < 3 {
-		t.Fatalf("expected denied control evidence, got %#v", summary.DeniedControls)
+	wantDeniedControls := []string{"illegal_workflow_jump", "release_before_preconditions", "cross_tenant_attempt", "unauthorized_mutation", "mutate_released_artifact"}
+	for _, want := range wantDeniedControls {
+		if !deniedControlsContain(summary.DeniedControls, want+":") {
+			t.Fatalf("missing denied control %q in %#v", want, summary.DeniedControls)
+		}
 	}
 
 	if _, err := store.CreateResult(ResultInput{AnalysisRequestLineID: summary.AnalysisRequestLines[0].ID, Value: 9.9, RawValue: "9.9 mg/L", Unit: "mg/L", Dilution: 1}, testActorWithRoles("client-contact", RoleClientContact)); !errors.Is(err, ErrAuthorizationDenied) {
@@ -82,6 +85,15 @@ func TestMVPVerticalSliceRunsSyntheticLIMSHappyPathAndNegativeControls(t *testin
 func auditContainsAnyResource(events []AuditEvent, action string) bool {
 	for _, event := range events {
 		if event.Action == action {
+			return true
+		}
+	}
+	return false
+}
+
+func deniedControlsContain(controls []string, prefix string) bool {
+	for _, control := range controls {
+		if strings.HasPrefix(control, prefix) {
 			return true
 		}
 	}

@@ -89,8 +89,13 @@ func run(args []string, stdout, stderr io.Writer) error {
 	case "restore":
 		return restoreDB(args[2:], stdout, stderr)
 	case "mvp":
-		if len(args) >= 3 && args[2] == "vertical-slice" {
-			return mvpVerticalSlice(args[3:], stdout, stderr)
+		if len(args) >= 3 {
+			switch args[2] {
+			case "vertical-slice":
+				return mvpVerticalSlice(args[3:], stdout, stderr)
+			case "verify-suite":
+				return mvpVerifySuite(args[3:], stdout, stderr)
+			}
 		}
 	case "customer-workflow":
 		if len(args) >= 3 && args[2] == "smoke-matrix" {
@@ -102,7 +107,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		}
 		return smokeHTTP(args[2:], stdout, stderr)
 	}
-	return fmt.Errorf("unknown command; supported: serve, audit verify, db migrate, db status, seed, reset, backup, restore, mvp vertical-slice, customer-workflow smoke-matrix, smoke, smoke performance")
+	return fmt.Errorf("unknown command; supported: serve, audit verify, db migrate, db status, seed, reset, backup, restore, mvp vertical-slice, mvp verify-suite, customer-workflow smoke-matrix, smoke, smoke performance")
 }
 
 func serve() error {
@@ -403,6 +408,83 @@ func mvpVerticalSlice(args []string, stdout, stderr io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "mvp vertical-slice ok db=%s sample=%s worksheet=%s report_artifact=%s denied_controls=%d\n", *dbPath, summary.Sample.ID, summary.Worksheet.ID, summary.Report.Artifact.ID, len(summary.DeniedControls))
 	return nil
+}
+
+type mvpVerificationArtifact struct {
+	Status           string   `json:"status"`
+	Command          string   `json:"command"`
+	DBPath           string   `json:"db_path"`
+	SampleID         string   `json:"sample_id"`
+	WorksheetID      string   `json:"worksheet_id"`
+	ReportArtifactID string   `json:"report_artifact_id"`
+	NegativeControls []string `json:"negative_controls"`
+	AuditActions     []string `json:"audit_actions"`
+}
+
+func mvpVerifySuite(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("mvp verify-suite", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dbPath := fs.String("db", defaultDBPath(), "SQLite database path")
+	artifactsDir := fs.String("artifacts", filepath.Join("artifacts", "mvp-verification"), "artifact output directory")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := removeSQLiteFiles(*dbPath); err != nil {
+		return err
+	}
+	store, err := lab.OpenSQLiteStore(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	summary, err := store.RunMVPVerticalSlice(lab.MVPVerticalSliceInput{}, cliActor("psc-mvp-verify-suite", lab.RoleAdmin, lab.RoleLabManager))
+	if err != nil {
+		return err
+	}
+	auditEvents, err := store.AuditEventsForScope(summary.Scope, 0)
+	if err != nil {
+		return err
+	}
+	artifact := mvpVerificationArtifact{
+		Status:           "pass",
+		Command:          fmt.Sprintf("project-scientist mvp verify-suite --db %s --artifacts %s", *dbPath, *artifactsDir),
+		DBPath:           *dbPath,
+		SampleID:         summary.Sample.ID,
+		WorksheetID:      summary.Worksheet.ID,
+		ReportArtifactID: summary.Report.Artifact.ID,
+		NegativeControls: append([]string(nil), summary.DeniedControls...),
+		AuditActions:     uniqueAuditActions(auditEvents),
+	}
+	if len(artifact.NegativeControls) != 5 {
+		return fmt.Errorf("mvp verify-suite expected 5 negative controls, got %d: %v", len(artifact.NegativeControls), artifact.NegativeControls)
+	}
+	if err := os.MkdirAll(*artifactsDir, 0o755); err != nil {
+		return err
+	}
+	artifactPath := filepath.Join(*artifactsDir, "mvp-verification-suite.json")
+	data, err := json.MarshalIndent(artifact, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(artifactPath, data, 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "mvp verify-suite ok db=%s sample=%s worksheet=%s report_artifact=%s negative_controls=%d artifact=%s\n", *dbPath, summary.Sample.ID, summary.Worksheet.ID, summary.Report.Artifact.ID, len(summary.DeniedControls), artifactPath)
+	return nil
+}
+
+func uniqueAuditActions(events []lab.AuditEvent) []string {
+	seen := map[string]bool{}
+	actions := []string{}
+	for _, event := range events {
+		if event.Action == "" || seen[event.Action] {
+			continue
+		}
+		seen[event.Action] = true
+		actions = append(actions, event.Action)
+	}
+	return actions
 }
 
 func customerWorkflowSmokeMatrix(args []string, stdout, stderr io.Writer) error {
