@@ -625,7 +625,11 @@ func (a *app) demoReset(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	summary, err := a.store.ResetAndSeedSyntheticDemo(a.fixturePath, demoResetActor(r))
+	_, actor, ok := a.requireAuthenticatedRequest(w, r)
+	if !ok {
+		return
+	}
+	summary, err := a.store.ResetAndSeedSyntheticDemo(a.fixturePath, actor)
 	if err != nil {
 		if errors.Is(err, lab.ErrAuthorizationDenied) {
 			http.Error(w, err.Error(), http.StatusForbidden)
@@ -1448,7 +1452,7 @@ func configuredInternalSessions() map[string]authenticatedSession {
 	tenantID := strings.TrimSpace(getenv("PSC_INTERNAL_SESSION_TENANT_ID", lab.DefaultTenantID))
 	labID := strings.TrimSpace(getenv("PSC_INTERNAL_SESSION_LAB_ID", lab.DefaultLabID))
 	userID := strings.TrimSpace(getenv("PSC_INTERNAL_SESSION_USER", "lab-dev"))
-	roles := []string{string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser)}
+	roles := []string{string(lab.RoleAdmin), string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser)}
 	ttl := 12 * time.Hour
 	if rawTTL := strings.TrimSpace(os.Getenv("PSC_INTERNAL_SESSION_TTL")); rawTTL != "" {
 		if parsed, err := time.ParseDuration(rawTTL); err == nil {
@@ -1474,7 +1478,7 @@ func configuredInternalSessions() map[string]authenticatedSession {
 
 func (a *app) requireSessionBoundary(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/api/demo/reset" {
+		if r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/static/") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -1575,19 +1579,6 @@ func (a *app) sessionActor(r *http.Request) lab.ActorContext {
 		AuthProvider:  "none",
 		RequestID:     requestID(r),
 		CorrelationID: requestID(r),
-	})
-}
-
-func demoResetActor(r *http.Request) lab.ActorContext {
-	requestID := requestID(r)
-	return lab.MustActorContext(lab.ActorContextInput{
-		UserID:            "local-demo-reset-admin",
-		DisplayName:       "local-demo-reset-admin",
-		AuthProvider:      "local-dev-demo-reset",
-		RequestID:         requestID,
-		CorrelationID:     requestID,
-		TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleAdmin)}}},
-		Roles:             []string{string(lab.RoleAdmin)},
 	})
 }
 

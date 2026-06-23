@@ -228,15 +228,16 @@ func TestDemoResetEndpointSeedsFixtureAndIsRerunnable(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store, demoResetEnabled: true, fixturePath: filepath.Join("..", "..", "fixtures", "mvp_synthetic_lab.json")}
+	app := attachDefaultSession(t, &app{store: store, demoResetEnabled: true, fixturePath: filepath.Join("..", "..", "fixtures", "mvp_synthetic_lab.json")})
 
 	for i := 0; i < 2; i++ {
 		req := httptest.NewRequest(http.MethodPost, "/api/demo/reset", nil)
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("X-PSC-Request-ID", "demo-reset-test")
+		addDefaultSessionCookie(req)
 		rr := httptest.NewRecorder()
 
-		app.demoReset(rr, req)
+		app.routes().ServeHTTP(rr, req)
 		if rr.Code != http.StatusOK {
 			t.Fatalf("run %d expected 200, got %d body=%s", i+1, rr.Code, rr.Body.String())
 		}
@@ -258,8 +259,33 @@ func TestDemoResetEndpointSeedsFixtureAndIsRerunnable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("audit events: %v", err)
 	}
-	if len(events) == 0 || events[len(events)-1].ActorContext.UserID != "local-demo-reset-admin" {
-		t.Fatalf("expected demo reset to use local admin actor, got %#v", events)
+	if len(events) == 0 || events[len(events)-1].ActorContext.UserID != "lab-dev" {
+		t.Fatalf("expected demo reset to use authenticated session actor, got %#v", events)
+	}
+}
+
+func TestDemoResetRouteRejectsUnauthenticatedResetEvenWhenEnabled(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app := attachDefaultSession(t, &app{store: store, demoResetEnabled: true, fixturePath: filepath.Join("..", "..", "fixtures", "mvp_synthetic_lab.json")})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/demo/reset", nil)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-PSC-Request-ID", "unauth-demo-reset-test")
+	rr := httptest.NewRecorder()
+
+	app.routes().ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unauthenticated demo reset, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := len(store.Clients()); got != 0 {
+		t.Fatalf("unauthenticated demo reset should create no clients, got %d", got)
+	}
+	if got := len(store.Samples()); got != 0 {
+		t.Fatalf("unauthenticated demo reset should create no samples, got %d", got)
 	}
 }
 

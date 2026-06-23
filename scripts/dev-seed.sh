@@ -2,10 +2,12 @@
 set -eu
 
 base_url="${1:-http://127.0.0.1:8097}"
+session_token="${PSC_INTERNAL_SESSION_TOKEN:-local-dev-session}"
 
 summary="$(curl -fsS \
   -H 'Accept: application/json' \
   -H 'X-PSC-Request-ID: dev-demo-reset' \
+  -H "Cookie: psc_internal_session=$session_token" \
   -X POST \
   "$base_url/api/demo/reset")"
 

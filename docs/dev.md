@@ -137,7 +137,7 @@ client=Okefenokee Synthetic Water Authority
 analyses=4
 ```
 
-The reset endpoint is disabled unless `PSC_ENABLE_DEMO_RESET=true`; the checked-in Compose dev service enables it and points `PSC_SYNTHETIC_FIXTURE_PATH` at `/app/fixtures/mvp_synthetic_lab.json` inside the runtime image. The reset operation is explicitly classified as a local-only admin configuration action: `ResetAndSeedSyntheticDemo` authorizes `admin.configure` before clearing data, audits denied attempts, and only the endpoint's internal `local-demo-reset-admin` actor is allowed through this lab-test path. Do not enable this endpoint on any customer, shared, or production-like deployment.
+The reset endpoint is disabled unless `PSC_ENABLE_DEMO_RESET=true`; the checked-in Compose dev service defaults it to `false` so a browser-reachable shared stack cannot destructively reseed itself by default. Local validation paths such as `make demo-reset` and `make docker-smoke` opt in explicitly, send the configured `psc_internal_session` cookie, and point `PSC_SYNTHETIC_FIXTURE_PATH` at `/app/fixtures/mvp_synthetic_lab.json` inside the runtime image. The reset operation is explicitly classified as a local-only admin configuration action: `ResetAndSeedSyntheticDemo` authorizes `admin.configure` against the authenticated internal session actor before clearing data, and unauthenticated requests are rejected before reseeding. Do not enable this endpoint on any customer, shared, or production-like deployment.
 
 ## Data persistence and cleanup
 
