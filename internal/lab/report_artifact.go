@@ -186,6 +186,31 @@ func (s *Store) ReleaseReportArtifactForScope(scope Scope, input ReportReleaseIn
 	return released, nil
 }
 
+func (s *Store) ReportArtifactForScope(scope Scope, id string) (ReportArtifact, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return ReportArtifact{}, false
+	}
+	artifact, err := reportArtifactByIDQuery(s.db, scope, strings.TrimSpace(id))
+	if err != nil {
+		return ReportArtifact{}, false
+	}
+	return artifact, true
+}
+
+func reportArtifactByIDQuery(q interface{ QueryRow(string, ...any) *sql.Row }, scope Scope, id string) (ReportArtifact, error) {
+	row := q.QueryRow(`SELECT id, tenant_id, lab_id, sample_id, snapshot_id, format, content_hash, content_blob, created_at FROM report_artifacts WHERE tenant_id = ? AND lab_id = ? AND id = ?`, scope.TenantID, scope.LabID, id)
+	var artifact ReportArtifact
+	var createdAt string
+	if err := row.Scan(&artifact.ID, &artifact.TenantID, &artifact.LabID, &artifact.SampleID, &artifact.SnapshotID, &artifact.Format, &artifact.ContentHash, &artifact.Content, &createdAt); err != nil {
+		return ReportArtifact{}, err
+	}
+	artifact.CreatedAt, _ = parseTime(createdAt)
+	return artifact, nil
+}
+
 func (s *Store) ReportSnapshot(id string) (ReportSnapshot, bool) {
 	return s.ReportSnapshotForScope(defaultScope(), id)
 }

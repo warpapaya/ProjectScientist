@@ -243,6 +243,7 @@ Tasks:
 - COA renderer/template system.
 - COC package generation and attachment handling. Implemented for lab-test synthetic data as immutable content-hashed COC packages with attachment manifests and audit events.
 - Report release and amendment workflow. Lab-test v1 requires accepted/reviewed results, accepted QC batch readiness, immutable report artifact content, and a release signature equivalent before writing a released ReportSnapshot/ReportArtifact.
+- Report release desk UI. Lab-test v1 surfaces per-sample readiness flags/blockers, backend-tied COA release/amendment forms, current artifact download, and COC package download without making customer/prod claims.
 - Label print artifacts.
 
 Exit criteria:

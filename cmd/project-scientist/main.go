@@ -37,6 +37,7 @@ type pageData struct {
 	ClientDefaults              []lab.ClientDefaults
 	Samples                     []lab.Sample
 	Results                     []lab.Result
+	ReportReadiness             []lab.ReportReleaseReadiness
 	Audit                       []lab.AuditEvent
 	Departments                 []lab.CatalogDepartment
 	Units                       []lab.CatalogUnit
@@ -134,6 +135,8 @@ func serve() error {
 	mux.HandleFunc("POST /api/results/", application.resultAction)
 	mux.HandleFunc("POST /api/samples", application.createSample)
 	mux.HandleFunc("GET /api/samples/", application.sampleLabelArtifact)
+	mux.HandleFunc("GET /api/report-artifacts/", application.reportArtifactDownload)
+	mux.HandleFunc("GET /api/coc-packages/", application.cocPackageDownload)
 	mux.HandleFunc("POST /api/samples/", application.sampleAction)
 	mux.HandleFunc("POST /api/worksheets", application.createWorksheet)
 	mux.HandleFunc("POST /api/worksheets/", application.routeWorksheetMutation)
@@ -492,6 +495,7 @@ func (a *app) pageData(scope lab.Scope, auditLimit int) pageData {
 		ClientDefaults:              a.store.AllClientDefaultsForScope(scope),
 		Samples:                     a.store.SamplesForScope(scope),
 		Results:                     a.store.ResultsForScope(scope),
+		ReportReadiness:             a.store.ReportReleaseReadinessForScopeAll(scope),
 		Audit:                       audit,
 		Departments:                 a.store.CatalogDepartmentsForScope(scope),
 		Units:                       a.store.CatalogUnitsForScope(scope),
@@ -819,6 +823,10 @@ func (a *app) sampleAction(w http.ResponseWriter, r *http.Request) {
 		a.generateCOCPackage(w, r)
 		return
 	}
+	if strings.HasSuffix(r.URL.Path, "/report-release") {
+		a.releaseReportArtifact(w, r)
+		return
+	}
 	http.NotFound(w, r)
 }
 
@@ -919,6 +927,92 @@ func (a *app) generateCOCPackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+}
+
+func (a *app) releaseReportArtifact(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasSuffix(r.URL.Path, "/report-release") {
+		http.NotFound(w, r)
+		return
+	}
+	sampleID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/samples/"), "/report-release")
+	if sampleID == "" || strings.Contains(sampleID, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	templateID := strings.TrimSpace(r.FormValue("template_id"))
+	if templateID == "" {
+		templateID = "coa-standard"
+	}
+	templateVersion := strings.TrimSpace(r.FormValue("template_version"))
+	if templateVersion == "" {
+		templateVersion = "2026.06"
+	}
+	labName := strings.TrimSpace(r.FormValue("lab_name"))
+	if labName == "" {
+		labName = "Clearline Demo Lab"
+	}
+	clientName := strings.TrimSpace(r.FormValue("client_name"))
+	if clientName == "" {
+		clientName = "Synthetic Client"
+	}
+	released, err := a.store.GenerateCOAReportArtifactForScope(scopeFromRequest(r), lab.COAGenerationInput{SampleID: sampleID, Template: lab.COATemplate{ID: templateID, Version: templateVersion, Style: lab.COAStyleCENLA, LabName: labName, ClientName: clientName}}, actor(r))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, lab.ErrAuthorizationDenied) {
+			status = http.StatusForbidden
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	if wantsJSON(r) {
+		writeJSON(w, released, http.StatusCreated)
+		return
+	}
+	http.Redirect(w, r, scopedHome(scopeFromRequest(r))+"#report-release", http.StatusSeeOther)
+}
+
+func (a *app) reportArtifactDownload(w http.ResponseWriter, r *http.Request) {
+	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/report-artifacts/"), "/")
+	if id == "" || strings.Contains(id, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	artifact, ok := a.store.ReportArtifactForScope(scopeFromRequest(r), id)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	contentType := artifact.Format
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", artifact.ID+".txt"))
+	_, _ = w.Write(artifact.Content)
+}
+
+func (a *app) cocPackageDownload(w http.ResponseWriter, r *http.Request) {
+	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/coc-packages/"), "/")
+	if id == "" || strings.Contains(id, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	pkg, ok := a.store.COCPackageForScope(scopeFromRequest(r), id)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	contentType := pkg.PackageFormat
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", pkg.ID+".json"))
+	_, _ = w.Write(pkg.Content)
 }
 
 func cocPackageAttachmentsFromRequest(r *http.Request) []lab.ReportPackageAttachmentInput {
