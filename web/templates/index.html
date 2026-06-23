@@ -10,7 +10,7 @@
 <body>
   <header class="topbar">
     <div><p class="eyebrow">Clearline lab-test lane</p><h1>Project Scientist</h1></div>
-    <div class="status-pill">Local dev • {{.Scope.TenantID}}/{{.Scope.LabID}} • append-only audit</div>
+    <div class="topbar-actions"><div class="status-pill">Local dev • {{.Scope.TenantID}}/{{.Scope.LabID}} • append-only audit</div><form method="post" action="/logout"><button class="ghost-button">Sign out</button></form></div>
   </header>
 
   <main class="shell">
@@ -51,6 +51,12 @@
       <div class="section-head"><div><p class="eyebrow">Next work</p><h2>Production workflow</h2></div><p>Use the primary navigation to work one lane at a time. No more everything-on-one-page control wall.</p></div>
       <div class="action-list"><a href="/samples">Receive or advance samples</a><a href="/results">Enter and review results</a><a href="/reports">Clear release blockers</a><a href="/admin">Maintain setup data</a></div>
     </section>
+    {{if .DemoResetEnabled}}
+    <section class="panel demo-workspace" id="demo-workspace">
+      <div class="section-head"><div><p class="eyebrow">Prospect trial data</p><h2>Load a realistic lab workspace</h2></div><p>Seed Tindall/CENLA-style sample data so a prospect can evaluate intake, results, release blockers, report artifacts, custody, labels, and audit flow without building setup data by hand.</p></div>
+      <form class="inline" method="post" action="/api/demo/reset">{{template "scopeFields" .}}<button>Load demo workspace</button></form>
+    </section>
+    {{end}}
 
     {{if eq .ActivePage "all"}}
     <section class="panel metrics" id="master-data-summary" aria-label="Configuration summary">

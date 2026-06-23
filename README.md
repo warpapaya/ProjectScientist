@@ -47,17 +47,33 @@ make test
 make vet
 make docker-test
 make docker-smoke
+make prospect-trial-smoke
 ```
+
+Local prospect trial browser-route smoke:
+
+```bash
+make prospect-trial-smoke COMPOSE_PROJECT_NAME=project-scientist-trial DEV_PORT=8108
+```
+
+That command rebuilds/starts the local dev container, signs in with the local browser credentials, loads the deterministic demo workspace, and verifies the prospect path: login → dashboard → samples with `S-000001` → results → reports. It is local lab-test evidence only, not a production/customer readiness claim.
 
 `make docker-test` uses an isolated `<COMPOSE_PROJECT_NAME>-test` Compose project and clone-specific default image tags, then cleans the Compose project up on exit. `make docker-smoke` uses an isolated `<COMPOSE_PROJECT_NAME>-smoke` Compose project on loopback port `18097`, verifies the seeded API state against an in-container temp data directory, runs the MVP vertical-slice command against the smoke project volume, then removes that smoke-only container/network/volume so immediate reruns start cleanly. Preserved development volumes are left in place and are not silently deleted.
 
-Seed/reset deterministic synthetic local-only data through the running dev API with an explicit synthetic local session:
+Browser trial login for local development:
+
+```bash
+make dev-up
+open http://127.0.0.1:8097/login
+```
+
+Default local credentials are `lab-dev` / `project-scientist-dev`. The checked-in Compose/Makefile defaults create only a non-secret local dev session token (`psc-local-dev-session-token`) and enable the fixture-backed demo reset for loopback development so the dashboard can load realistic Tindall/CENLA-style sample data from the browser. For a different local token, use `PSC_INTERNAL_SESSION_TOKEN=$(openssl rand -hex 24) make dev-up`. The reset is safe to rerun only for the local prototype volume and recreates the fixture-backed `C-00001` / `S-000001` demo state from `fixtures/mvp_synthetic_lab.json`; do not enable it for shared/customer/prod deployments.
+
+Seed/reset deterministic synthetic local-only data from the CLI:
 
 ```bash
 make demo-reset
 ```
-
-The checked-in Compose default creates only a non-secret local dev session token (`psc-local-dev-session-token`) for loopback development and leaves the destructive reset endpoint disabled. `make demo-reset` temporarily starts the local stack with `PSC_ENABLE_DEMO_RESET=true` and sends the session cookie for that synthetic token. For a different local token, use `PSC_INTERNAL_SESSION_TOKEN=$(openssl rand -hex 24) make demo-reset`. This is safe to rerun only for the local prototype volume and recreates the fixture-backed `C-00001` / `S-000001` demo state from `fixtures/mvp_synthetic_lab.json`; do not enable it for shared/customer/prod deployments.
 
 Stop only this checkout's dev/test/smoke Compose projects while preserving named development data volumes:
 

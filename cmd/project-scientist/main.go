@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -38,6 +39,7 @@ type pageData struct {
 	ActivePage                  string
 	PageTitle                   string
 	PageDescription             string
+	DemoResetEnabled            bool
 	Clients                     []lab.Client
 	Sites                       []lab.Site
 	Contacts                    []lab.Contact
@@ -111,8 +113,13 @@ func run(args []string, stdout, stderr io.Writer) error {
 			return customerWorkflowSmokeMatrix(args[3:], stdout, stderr)
 		}
 	case "smoke":
-		if len(args) >= 3 && args[2] == "performance" {
-			return smokePerformance(args[3:], stdout, stderr)
+		if len(args) >= 3 {
+			switch args[2] {
+			case "performance":
+				return smokePerformance(args[3:], stdout, stderr)
+			case "prospect-trial":
+				return smokeProspectTrial(args[3:], stdout, stderr)
+			}
 		}
 		return smokeHTTP(args[2:], stdout, stderr)
 	}
@@ -141,6 +148,9 @@ func serve() error {
 func (a *app) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", a.index)
+	mux.HandleFunc("GET /login", a.loginPage)
+	mux.HandleFunc("POST /login", a.login)
+	mux.HandleFunc("POST /logout", a.logout)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /api/state", a.apiState)
 	mux.HandleFunc("POST /api/demo/reset", a.demoReset)
@@ -522,6 +532,138 @@ func customerWorkflowSmokeMatrix(args []string, stdout, stderr io.Writer) error 
 	return nil
 }
 
+func smokeProspectTrial(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("smoke prospect-trial", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	baseURL := fs.String("base-url", getenv("DEV_BASE_URL", "http://127.0.0.1:8097"), "running local Project Scientist base URL")
+	username := fs.String("username", getenv("PSC_INTERNAL_SESSION_USER", "lab-dev"), "local dev username")
+	password := fs.String("password", configuredLoginPassword(), "local dev password")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	base := strings.TrimRight(*baseURL, "/")
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return err
+	}
+	client := http.Client{Timeout: 10 * time.Second, Jar: jar}
+	if err := expectHTTP(&client, base+"/healthz", "ok"); err != nil {
+		return fmt.Errorf("health check: %w", err)
+	}
+	if err := expectHTTP(&client, base+"/login", "Sign in to the lab workspace"); err != nil {
+		return fmt.Errorf("login page: %w", err)
+	}
+	form := url.Values{}
+	form.Set("username", *username)
+	form.Set("password", *password)
+	loginReq, err := http.NewRequest(http.MethodPost, base+"/login", strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	loginResp, err := client.Do(loginReq)
+	if err != nil {
+		return fmt.Errorf("login request: %w", err)
+	}
+	loginBody, err := readHTTPBody(loginResp)
+	if err != nil {
+		return err
+	}
+	if loginResp.StatusCode < 200 || loginResp.StatusCode >= 300 {
+		return fmt.Errorf("login returned %s: %s", loginResp.Status, strings.TrimSpace(loginBody))
+	}
+	for _, want := range []string{"Dashboard", `href="/samples"`, `aria-label="Primary navigation"`} {
+		if !strings.Contains(loginBody, want) {
+			return fmt.Errorf("post-login dashboard missing %q", want)
+		}
+	}
+	csrf, err := csrfTokenFromJar(jar, base)
+	if err != nil {
+		return err
+	}
+	resetReq, err := http.NewRequest(http.MethodPost, base+"/api/demo/reset", nil)
+	if err != nil {
+		return err
+	}
+	resetReq.Header.Set("Accept", "application/json")
+	resetReq.Header.Set(csrfHeaderName, csrf)
+	resetResp, err := client.Do(resetReq)
+	if err != nil {
+		return fmt.Errorf("demo reset request: %w", err)
+	}
+	resetBody, err := readHTTPBody(resetResp)
+	if err != nil {
+		return err
+	}
+	if resetResp.StatusCode < 200 || resetResp.StatusCode >= 300 {
+		return fmt.Errorf("demo reset returned %s: %s", resetResp.Status, strings.TrimSpace(resetBody))
+	}
+	for _, want := range []string{"Okefenokee Synthetic Water Authority", "S-000001"} {
+		if !strings.Contains(resetBody, want) {
+			return fmt.Errorf("demo reset response missing %q: %s", want, strings.TrimSpace(resetBody))
+		}
+	}
+	checks := []struct {
+		path string
+		want []string
+	}{
+		{"/dashboard", []string{`href="/dashboard" aria-current="page"`, "Active samples", "Load a realistic lab workspace"}},
+		{"/samples", []string{`href="/samples" aria-current="page"`, "S-000001", "Okefenokee Synthetic Water Authority", `id="workflow-board"`}},
+		{"/results", []string{`href="/results" aria-current="page"`, "Result entry grid", "Review/release queue"}},
+		{"/reports", []string{`href="/reports" aria-current="page"`, "Report release desk", "Preview COA"}},
+	}
+	for _, check := range checks {
+		body, err := getHTTPBody(&client, base+check.path)
+		if err != nil {
+			return fmt.Errorf("%s: %w", check.path, err)
+		}
+		for _, want := range check.want {
+			if !strings.Contains(body, want) {
+				return fmt.Errorf("%s missing %q", check.path, want)
+			}
+		}
+	}
+	fmt.Fprintf(stdout, "prospect trial smoke ok base_url=%s routes=login,dashboard,samples,results,reports seeded_sample=S-000001\n", base)
+	return nil
+}
+
+func readHTTPBody(res *http.Response) (string, error) {
+	defer res.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+func getHTTPBody(client *http.Client, url string) (string, error) {
+	res, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	body, err := readHTTPBody(res)
+	if err != nil {
+		return "", err
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return "", fmt.Errorf("returned %s: %s", res.Status, strings.TrimSpace(body))
+	}
+	return body, nil
+}
+
+func csrfTokenFromJar(jar http.CookieJar, base string) (string, error) {
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	for _, cookie := range jar.Cookies(parsed) {
+		if cookie.Name == sessionCookieName && strings.TrimSpace(cookie.Value) != "" {
+			return deriveCSRFToken(cookie.Value), nil
+		}
+	}
+	return "", fmt.Errorf("%s cookie was not set by login", sessionCookieName)
+}
+
 func smokeHTTP(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("smoke", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -621,6 +763,7 @@ func (a *app) pageData(scope lab.Scope, auditLimit int, actor lab.ActorContext) 
 	return pageData{
 		Scope:                       scope,
 		CSRFToken:                   a.csrfTokenForRequest(scope, actor),
+		DemoResetEnabled:            a.demoResetEnabled,
 		Clients:                     a.store.ClientsForScope(scope),
 		Sites:                       a.store.SitesForScope(scope),
 		Contacts:                    a.store.ContactsForScope(scope),
@@ -676,7 +819,11 @@ func (a *app) demoReset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, summary, http.StatusOK)
+	if wantsJSON(r) {
+		writeJSON(w, summary, http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 
 func (a *app) createClient(w http.ResponseWriter, r *http.Request) {
@@ -1474,6 +1621,116 @@ func parseOptionalRequestTime(raw string) time.Time {
 	return time.Time{}
 }
 
+func (a *app) loginPage(w http.ResponseWriter, r *http.Request) {
+	if _, err := a.currentSession(r); err == nil {
+		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		return
+	}
+	a.renderLogin(w, http.StatusOK, "")
+}
+
+func (a *app) login(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	token, ok := a.sessionTokenForLogin(r.FormValue("username"), r.FormValue("password"))
+	if !ok {
+		a.renderLogin(w, http.StatusUnauthorized, "The username or password was not recognized.")
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+	})
+	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+}
+
+func (a *app) logout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+		MaxAge:   -1,
+	})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func (a *app) renderLogin(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	data := struct{ Message string }{Message: message}
+	if err := loginTemplate.Execute(w, data); err != nil {
+		log.Printf("render login: %v", err)
+	}
+}
+
+func (a *app) sessionTokenForLogin(username, password string) (string, bool) {
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+	expectedPassword := configuredLoginPassword()
+	if a == nil || len(a.sessions) == 0 || username == "" || password == "" || expectedPassword == "" {
+		return "", false
+	}
+	if subtle.ConstantTimeCompare([]byte(password), []byte(expectedPassword)) != 1 {
+		return "", false
+	}
+	now := time.Now
+	if a.now != nil {
+		now = a.now
+	}
+	for token, session := range a.sessions {
+		if session.Actor.UserID != username {
+			continue
+		}
+		if !session.ExpiresAt.IsZero() && !now().Before(session.ExpiresAt) {
+			continue
+		}
+		return token, true
+	}
+	return "", false
+}
+
+func configuredLoginPassword() string {
+	return strings.TrimSpace(getenv("PSC_INTERNAL_SESSION_PASSWORD", "project-scientist-dev"))
+}
+
+var loginTemplate = template.Must(template.New("login").Parse(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in • Project Scientist</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="login-body">
+  <main class="login-shell">
+    <section class="login-card-wrap">
+      <div class="login-brand">
+        <p class="eyebrow">Project Scientist</p>
+        <h1>Sign in to the lab workspace</h1>
+        <p>Use the local dev account to evaluate the v0.1 SaaS workflow without manually injecting cookies.</p>
+      </div>
+      <form class="login-card" method="post" action="/login">
+        <h2>Welcome back</h2>
+        {{if .Message}}<p class="login-error" role="alert">{{.Message}}</p>{{end}}
+        <label><span>Username</span><input name="username" autocomplete="username" placeholder="lab-dev" required autofocus></label>
+        <label><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
+        <button>Sign in</button>
+        <p class="login-hint">Local default: <code>lab-dev</code> / <code>project-scientist-dev</code>. Override with <code>PSC_INTERNAL_SESSION_USER</code> and <code>PSC_INTERNAL_SESSION_PASSWORD</code>.</p>
+      </form>
+    </section>
+  </main>
+</body>
+</html>`))
+
 const (
 	sessionCookieName   = "psc_internal_session"
 	csrfHeaderName      = "X-PSC-CSRF-Token"
@@ -1527,7 +1784,7 @@ func configuredInternalSessions() map[string]authenticatedSession {
 
 func (a *app) requireSessionBoundary(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/static/") {
+		if r.URL.Path == "/healthz" || r.URL.Path == "/login" || r.URL.Path == "/logout" || strings.HasPrefix(r.URL.Path, "/static/") {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -1,4 +1,4 @@
-.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke performance-concurrency-smoke backup-restore-proof image-review dev-up dev-down dev-clean-projects dev-clean-by-name dev-reset dev-seed demo-reset mvp-vertical-slice mvp-verify-suite
+.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke prospect-trial-smoke performance-concurrency-smoke backup-restore-proof image-review dev-up dev-down dev-clean-projects dev-clean-by-name dev-reset dev-seed demo-reset mvp-vertical-slice mvp-verify-suite
 
 WORKTREE_SLUG ?= $(shell basename "$$(pwd)" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]_.-' '-' | sed 's/^-//;s/-$$//')
 COMPOSE_PROJECT_NAME ?= project-scientist-$(WORKTREE_SLUG)
@@ -11,7 +11,7 @@ PSC_IMAGE_TAG ?= project-scientist:$(WORKTREE_SLUG)-dev-local
 PSC_TEST_IMAGE_TAG ?= project-scientist:$(WORKTREE_SLUG)-test-local
 DOCKER_GO_PARALLEL ?= 1
 PSC_INTERNAL_SESSION_TOKEN ?= psc-local-dev-session-token
-PSC_ENABLE_DEMO_RESET ?= false
+PSC_ENABLE_DEMO_RESET ?= true
 COMPOSE ?= docker compose
 COMPOSE_RUN = env COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)" PSC_DEV_PORT="$(DEV_PORT)" PSC_DATA_DIR="$(PSC_DATA_DIR)" PSC_IMAGE_TAG="$(PSC_IMAGE_TAG)" PSC_TEST_IMAGE_TAG="$(PSC_TEST_IMAGE_TAG)" PSC_DOCKER_GO_PARALLEL="$(DOCKER_GO_PARALLEL)" PSC_INTERNAL_SESSION_TOKEN="$(PSC_INTERNAL_SESSION_TOKEN)" PSC_ENABLE_DEMO_RESET="$(PSC_ENABLE_DEMO_RESET)" $(COMPOSE)
 COMPOSE_TEST_RUN = env COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)-test" PSC_DEV_PORT="$(DEV_PORT)" PSC_DATA_DIR="$(PSC_DATA_DIR)" PSC_IMAGE_TAG="$(PSC_IMAGE_TAG)" PSC_TEST_IMAGE_TAG="$(PSC_TEST_IMAGE_TAG)" PSC_DOCKER_GO_PARALLEL="$(DOCKER_GO_PARALLEL)" PSC_INTERNAL_SESSION_TOKEN="$(PSC_INTERNAL_SESSION_TOKEN)" PSC_ENABLE_DEMO_RESET="false" $(COMPOSE)
@@ -60,6 +60,10 @@ docker-smoke:
 		$(COMPOSE_SMOKE_RUN) exec -T project-scientist /app/project-scientist mvp vertical-slice --db /data/project-scientist-mvp.db | grep -q 'mvp vertical-slice ok'; \
 		$(COMPOSE_SMOKE_RUN) exec -T project-scientist /app/project-scientist mvp verify-suite --db /data/project-scientist-mvp-suite.db --artifacts /tmp/mvp-verification | grep -q 'mvp verify-suite ok'; \
 		printf 'docker smoke ok\n'
+
+prospect-trial-smoke: dev-up
+	@go run ./cmd/project-scientist smoke prospect-trial --base-url $(DEV_BASE_URL)
+
 
 performance-concurrency-smoke:
 	@./scripts/performance-concurrency-smoke.sh --json
