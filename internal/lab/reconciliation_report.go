@@ -215,3 +215,134 @@ func hashAny(value any) string {
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])
 }
+
+type canonicalAnalysisResultReconciliationRow struct {
+	Row                    int    `json:"row,omitempty"`
+	SourceID               string `json:"source_id,omitempty"`
+	ImportedID             string `json:"imported_id,omitempty"`
+	AnalysisRequestLineID  string `json:"analysis_request_line_id"`
+	Service                string `json:"service"`
+	Method                 string `json:"method"`
+	Unit                   string `json:"unit"`
+	Result                 string `json:"result"`
+	Qualifier              string `json:"qualifier"`
+	MDL                    string `json:"mdl"`
+	RL                     string `json:"rl"`
+	Comments               string `json:"comments"`
+	CatalogSnapshotID      string `json:"catalog_snapshot_id,omitempty"`
+	CatalogSnapshotVersion int    `json:"catalog_snapshot_version,omitempty"`
+}
+
+func (s *Store) AnalysisResultImportReconciliationReportForScope(scope Scope, result ImportResult, actor ActorContext) (ImportReconciliationReport, error) {
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return ImportReconciliationReport{}, err
+	}
+	if result.Entity != "" && result.Entity != ImportEntityAnalysisResults {
+		return ImportReconciliationReport{}, fmt.Errorf("unsupported reconciliation entity %q", result.Entity)
+	}
+	actor = normalizeActorContext(actor, "analysis-result-reconciliation")
+	report := ImportReconciliationReport{
+		Provenance:  ReconciliationProvenance{Source: result.Source, Entity: ImportEntityAnalysisResults, Format: result.Format, GeneratedAt: time.Now().UTC(), GeneratedBy: actor.UserID},
+		SourceCount: result.TotalRows,
+	}
+	if report.Provenance.Source == "" {
+		report.Provenance.Source = "inline." + string(result.Format)
+	}
+	if report.Provenance.Format == "" {
+		report.Provenance.Format = ImportFormatCSV
+	}
+
+	sourceHashRows := make([]canonicalAnalysisResultReconciliationRow, 0, len(result.Rows))
+	importedHashRows := make([]canonicalAnalysisResultReconciliationRow, 0, len(result.Rows))
+	for _, row := range result.Rows {
+		if row.Action == ReconciliationActionSkip {
+			continue
+		}
+		report.ImportedCount++
+		source := canonicalAnalysisResultSourceRow(row)
+		sourceHashRows = append(sourceHashRows, source)
+		persisted, ok := s.analysisResultReconciliationImportedRow(scope, row.ID, row.Row, row.Data)
+		if !ok {
+			report.MissingRecords = append(report.MissingRecords, ReconciliationRecord{Row: row.Row, SourceID: source.SourceID, ImportedID: row.ID, SourceHash: hashAny(source), Reason: "import result references a result that is not present"})
+			continue
+		}
+		importedHashRows = append(importedHashRows, persisted)
+		if analysisResultRowsMatch(source, persisted) {
+			report.MatchedCount++
+			continue
+		}
+		report.MismatchedRecords = append(report.MismatchedRecords, ReconciliationRecord{Row: row.Row, SourceID: source.SourceID, ImportedID: row.ID, SourceHash: hashAny(source), ImportedHash: hashAny(persisted), Reason: "source analysis result row and imported result/snapshot differ", FieldDiffs: analysisResultFieldDiffs(source, persisted)})
+	}
+	sort.Slice(report.MissingRecords, func(i, j int) bool { return report.MissingRecords[i].Row < report.MissingRecords[j].Row })
+	sort.Slice(report.MismatchedRecords, func(i, j int) bool { return report.MismatchedRecords[i].Row < report.MismatchedRecords[j].Row })
+	report.SourceHash = hashAny(sourceHashRows)
+	report.ImportedHash = hashAny(importedHashRows)
+	if err := s.auditReconciliationReport(scope, report, actor); err != nil {
+		return ImportReconciliationReport{}, err
+	}
+	events, err := s.AuditEventsForScope(scope, 0)
+	if err != nil {
+		return ImportReconciliationReport{}, err
+	}
+	if len(events) > 0 {
+		report.AuditEventID = events[len(events)-1].EventID
+	}
+	return report, nil
+}
+
+func canonicalAnalysisResultSourceRow(row ImportRowResult) canonicalAnalysisResultReconciliationRow {
+	return canonicalAnalysisResultReconciliationRow{Row: row.Row, SourceID: strings.TrimSpace(row.Data["legacy_id"]), ImportedID: row.ID, AnalysisRequestLineID: strings.TrimSpace(row.Data["analysis_request_line_id"]), Service: strings.TrimSpace(row.Data["service"]), Method: strings.TrimSpace(row.Data["method"]), Unit: strings.TrimSpace(row.Data["unit"]), Result: strings.TrimSpace(row.Data["result"]), Qualifier: strings.TrimSpace(row.Data["qualifier"]), MDL: normalizeNumericString(row.Data["mdl"]), RL: normalizeNumericString(row.Data["rl"]), Comments: strings.TrimSpace(row.Data["comments"])}
+}
+
+func (s *Store) analysisResultReconciliationImportedRow(scope Scope, resultID string, rowNumber int, source ImportRow) (canonicalAnalysisResultReconciliationRow, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result, err := resultByIDTx(s.db, resultID)
+	if err != nil || result.TenantID != scope.TenantID || result.LabID != scope.LabID {
+		return canonicalAnalysisResultReconciliationRow{}, false
+	}
+	line, err := analysisRequestLineByIDTx(s.db, result.AnalysisRequestLineID)
+	if err != nil || line.TenantID != scope.TenantID || line.LabID != scope.LabID {
+		return canonicalAnalysisResultReconciliationRow{}, false
+	}
+	return canonicalAnalysisResultReconciliationRow{Row: rowNumber, SourceID: strings.TrimSpace(source["legacy_id"]), ImportedID: result.ID, AnalysisRequestLineID: result.AnalysisRequestLineID, Service: strings.TrimSpace(line.Name), Method: strings.TrimSpace(line.MethodName), Unit: strings.TrimSpace(result.Unit), Result: strings.TrimSpace(result.RawValue), Qualifier: strings.TrimSpace(result.Qualifier), MDL: normalizeNumericString(fmt.Sprintf("%g", result.MDL)), RL: normalizeNumericString(fmt.Sprintf("%g", result.RL)), Comments: strings.TrimSpace(result.Comments), CatalogSnapshotID: line.CatalogSnapshotID, CatalogSnapshotVersion: line.CatalogSnapshotVersion}, true
+}
+
+func analysisResultRowsMatch(source, imported canonicalAnalysisResultReconciliationRow) bool {
+	return source.AnalysisRequestLineID == imported.AnalysisRequestLineID && source.Service == imported.Service && source.Method == imported.Method && source.Unit == imported.Unit && source.Result == imported.Result && source.Qualifier == imported.Qualifier && source.MDL == imported.MDL && source.RL == imported.RL && source.Comments == imported.Comments && imported.CatalogSnapshotID != "" && imported.CatalogSnapshotVersion > 0
+}
+
+func analysisResultFieldDiffs(source, imported canonicalAnalysisResultReconciliationRow) map[string]ReconciliationDiff {
+	diffs := map[string]ReconciliationDiff{}
+	add := func(field, sourceValue, importedValue string) {
+		if sourceValue != importedValue {
+			diffs[field] = ReconciliationDiff{Source: sourceValue, Imported: importedValue}
+		}
+	}
+	add("analysis_request_line_id", source.AnalysisRequestLineID, imported.AnalysisRequestLineID)
+	add("service", source.Service, imported.Service)
+	add("method", source.Method, imported.Method)
+	add("unit", source.Unit, imported.Unit)
+	add("result", source.Result, imported.Result)
+	add("qualifier", source.Qualifier, imported.Qualifier)
+	add("mdl", source.MDL, imported.MDL)
+	add("rl", source.RL, imported.RL)
+	add("comments", source.Comments, imported.Comments)
+	if imported.CatalogSnapshotID == "" || imported.CatalogSnapshotVersion == 0 {
+		diffs["catalog_snapshot"] = ReconciliationDiff{Source: "immutable snapshot present", Imported: fmt.Sprintf("id=%s version=%d", imported.CatalogSnapshotID, imported.CatalogSnapshotVersion)}
+	}
+	return diffs
+}
+
+func normalizeNumericString(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "0"
+	}
+	var value float64
+	if _, err := fmt.Sscanf(trimmed, "%f", &value); err != nil {
+		return trimmed
+	}
+	return fmt.Sprintf("%g", value)
+}

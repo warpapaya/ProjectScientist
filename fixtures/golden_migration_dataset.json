@@ -91,13 +91,13 @@
     }
   ],
   "analyses": [
-    {"sample_legacy_id": "SYN-SAMPLE-PI-0001", "service": "pH", "method": "Synthetic SM4500-H+B", "unit": "pH units", "result": "7.42", "qualifier": "", "qc_role": "field-check"},
-    {"sample_legacy_id": "SYN-SAMPLE-PI-0001", "service": "Total Suspended Solids", "method": "Synthetic SM2540-D", "unit": "mg/L", "result": "18", "qualifier": "", "qc_role": "batch-sample"},
-    {"sample_legacy_id": "SYN-SAMPLE-PI-0001", "service": "Lead", "method": "Synthetic EPA 200.8", "unit": "ug/L", "result": "2.1", "qualifier": "J", "qc_role": "batch-sample"},
-    {"sample_legacy_id": "SYN-SAMPLE-MW-0001", "service": "Nitrate as N", "method": "Synthetic EPA 300.0", "unit": "mg/L", "result": "0.64", "qualifier": "", "qc_role": "batch-sample"},
-    {"sample_legacy_id": "SYN-SAMPLE-MW-0001", "service": "Total Coliform", "method": "Synthetic SM9223", "unit": "P/A", "result": "Absent", "qualifier": "", "qc_role": "microbiology-placeholder"},
-    {"sample_legacy_id": "SYN-SAMPLE-MF-0001", "service": "Microscopy Screen", "method": "Synthetic Microscopy SOP-01", "unit": "qualitative", "result": "No regulated fibers observed", "qualifier": "", "qc_role": "reviewed-finding"},
-    {"sample_legacy_id": "SYN-SAMPLE-MF-0001", "service": "Narrative Review", "method": "Synthetic Technical Review", "unit": "text", "result": "See synthetic narrative package", "qualifier": "N", "qc_role": "narrative"}
+    {"sample_legacy_id": "SYN-SAMPLE-PI-0001", "service": "pH", "method": "Synthetic SM4500-H+B", "unit": "pH units", "result": "7.42", "qualifier": "", "mdl": "0", "rl": "0", "comments": "synthetic migration fixture result; lab-test only", "qc_role": "field-check"},
+    {"sample_legacy_id": "SYN-SAMPLE-PI-0001", "service": "Total Suspended Solids", "method": "Synthetic SM2540-D", "unit": "mg/L", "result": "18", "qualifier": "", "mdl": "0.05", "rl": "0.10", "comments": "synthetic migration fixture result; lab-test only", "qc_role": "batch-sample"},
+    {"sample_legacy_id": "SYN-SAMPLE-PI-0001", "service": "Lead", "method": "Synthetic EPA 200.8", "unit": "ug/L", "result": "2.1", "qualifier": "J", "mdl": "0.5", "rl": "1.0", "comments": "synthetic migration fixture result; lab-test only", "qc_role": "batch-sample"},
+    {"sample_legacy_id": "SYN-SAMPLE-MW-0001", "service": "Nitrate as N", "method": "Synthetic EPA 300.0", "unit": "mg/L", "result": "0.64", "qualifier": "", "mdl": "0.05", "rl": "0.10", "comments": "synthetic migration fixture result; lab-test only", "qc_role": "batch-sample"},
+    {"sample_legacy_id": "SYN-SAMPLE-MW-0001", "service": "Total Coliform", "method": "Synthetic SM9223", "unit": "P/A", "result": "Absent", "qualifier": "", "mdl": "0", "rl": "0", "comments": "synthetic migration fixture result; lab-test only", "qc_role": "microbiology-placeholder"},
+    {"sample_legacy_id": "SYN-SAMPLE-MF-0001", "service": "Microscopy Screen", "method": "Synthetic Microscopy SOP-01", "unit": "qualitative", "result": "No regulated fibers observed", "qualifier": "", "mdl": "0", "rl": "0", "comments": "synthetic migration fixture result; lab-test only", "qc_role": "reviewed-finding"},
+    {"sample_legacy_id": "SYN-SAMPLE-MF-0001", "service": "Narrative Review", "method": "Synthetic Technical Review", "unit": "text", "result": "See synthetic narrative package", "qualifier": "N", "mdl": "0", "rl": "0", "comments": "synthetic migration fixture result; lab-test only", "qc_role": "narrative"}
   ],
   "qc_batches": [
     {
