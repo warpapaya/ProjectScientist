@@ -1,0 +1,18 @@
+CERTIFICATE OF ANALYSIS
+Template: coa-tindall-standard version 2026.06
+Style: tindall
+Laboratory: Tindall Synthetic Lab
+Client: Tindall Synthetic Utilities
+Project: Synthetic Drinking Water Compliance
+Sample: S-000042
+Lab sample: TINDALL-2026-00042
+Client sample: TW-2026-001
+Matrix: Drinking Water
+Status: released
+
+RESULTS
+Result ID | Value | Unit | Qualifier | MDL | RL | Analyst | Reviewer
+R-1 | 7.12 | pH | - | - | - | analyst-1 | reviewer-1
+R-2 | 0.42 | NTU | J | 0.1 | 0.3 | analyst-1 | reviewer-1
+
+Synthetic lab-test artifact. Not customer-facing.
