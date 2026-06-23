@@ -4,7 +4,7 @@ Scope: Project Scientist lab-development only. This inventory maps local HTTP/AP
 
 ## Policy primitives
 
-- Actor context: `lab.ActorContext` created from the trusted local dev/session boundary in `cmd/project-scientist/main.go` (`actor`, `demoResetActor`) and normalized by `internal/lab/actor_context.go`.
+- Actor context: `lab.ActorContext` created from the trusted local dev/session boundary in `cmd/project-scientist/main.go` (`actor` and authenticated internal-session actor construction) and normalized by `internal/lab/actor_context.go`.
 - Tenant/lab scope: `lab.Scope` from `scopeFromRequest`; every mutating store method normalizes scope and checks tenant membership through `Authorize` / `authorizeOperationTx`.
 - Role policy: `internal/lab/authorization.go` `operationAllowedRoles`.
 - Audited denial: protected store operations use `authorizeOperationTx` or `AuthorizeOperationForScope`; denied attempts emit `audit_events.outcome=denied`, `reason=authorization_denied`, normalized resource metadata, and sanitized details before returning `ErrAuthorizationDenied`.
