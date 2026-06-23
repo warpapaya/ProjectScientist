@@ -104,6 +104,128 @@ func TestCreateQCSampleRelationshipPersistsSampleMethodLineAndTaxonomy(t *testin
 	}
 }
 
+func TestQCSampleTaxonomyReturnsDefensiveRelationshipTypeCopies(t *testing.T) {
+	taxonomy := QCSampleTaxonomy()
+	if len(taxonomy) == 0 || len(taxonomy[0].AllowedRelationshipTypes) == 0 {
+		t.Fatalf("expected taxonomy relationship types")
+	}
+	taxonomy[0].AllowedRelationshipTypes[0] = QCRelationshipType("mutated")
+	fresh := QCSampleTaxonomy()
+	if fresh[0].AllowedRelationshipTypes[0] == QCRelationshipType("mutated") {
+		t.Fatalf("QCSampleTaxonomy exposed mutable relationship type slice")
+	}
+
+	def, ok := QCDefinitionForKind(QCSampleKindMethodBlank)
+	if !ok || len(def.AllowedRelationshipTypes) == 0 {
+		t.Fatalf("expected method blank definition")
+	}
+	def.AllowedRelationshipTypes[0] = QCRelationshipType("mutated")
+	freshDef, ok := QCDefinitionForKind(QCSampleKindMethodBlank)
+	if !ok || freshDef.AllowedRelationshipTypes[0] == QCRelationshipType("mutated") {
+		t.Fatalf("QCDefinitionForKind exposed mutable relationship type slice")
+	}
+}
+
+func TestCreateQCSampleRelationshipRejectsInvalidTargetShapes(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	actor := catalogTestActor()
+	client, method, service := createQCClientMethodAndService(t, store, actor)
+	qcSample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "QC batch", ClientSampleID: "QC-1", Matrix: "Water", AnalysisServiceIDs: []string{service.ID}}, actor)
+	if err != nil {
+		t.Fatalf("create qc sample: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		input   CreateQCSampleRelationshipInput
+		wantErr string
+	}{
+		{
+			name:    "duplicate rejects method only",
+			input:   CreateQCSampleRelationshipInput{QCSampleID: qcSample.ID, QCSampleKind: QCSampleKindFieldDuplicate, RelationshipType: QCRelationshipTypeDuplicateOf, MethodID: method.ID},
+			wantErr: "requires related sample or analysis request line",
+		},
+		{
+			name:    "spike rejects method only",
+			input:   CreateQCSampleRelationshipInput{QCSampleID: qcSample.ID, QCSampleKind: QCSampleKindMatrixSpike, RelationshipType: QCRelationshipTypeSpikeOf, MethodID: method.ID},
+			wantErr: "requires related sample or analysis request line",
+		},
+		{
+			name:    "calibration rejects batch only",
+			input:   CreateQCSampleRelationshipInput{QCSampleID: qcSample.ID, QCSampleKind: QCSampleKindInitialCalibrationVerification, RelationshipType: QCRelationshipTypeCalibrationForMethod, BatchID: "BATCH-ONLY"},
+			wantErr: "requires method or method-bearing analysis request line",
+		},
+		{
+			name:    "method control rejects related sample only",
+			input:   CreateQCSampleRelationshipInput{QCSampleID: qcSample.ID, QCSampleKind: QCSampleKindLaboratoryControlSample, RelationshipType: QCRelationshipTypeControlForMethod, RelatedSampleID: qcSample.ID},
+			wantErr: "requires method or method-bearing analysis request line",
+		},
+		{
+			name:    "batch control rejects sample only without batch",
+			input:   CreateQCSampleRelationshipInput{QCSampleID: qcSample.ID, QCSampleKind: QCSampleKindMethodBlank, RelationshipType: QCRelationshipTypeBatchControl, RelatedSampleID: qcSample.ID},
+			wantErr: "requires batch id",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := store.CreateQCSampleRelationship(tc.input, actor)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected %q error, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestCreateQCSampleRelationshipAcceptsValidTargetShapes(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	actor := catalogTestActor()
+	client, method, service := createQCClientMethodAndService(t, store, actor)
+	clientSample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "QC batch", ClientSampleID: "C-2", Matrix: "Water", AnalysisServiceIDs: []string{service.ID}}, actor)
+	if err != nil {
+		t.Fatalf("create client sample: %v", err)
+	}
+	lines := store.AnalysisRequestLinesForSample(clientSample.ID)
+	if len(lines) != 1 {
+		t.Fatalf("expected client analysis line, got %d", len(lines))
+	}
+
+	cases := []struct {
+		name  string
+		kind  QCSampleKind
+		rel   QCRelationshipType
+		input CreateQCSampleRelationshipInput
+	}{
+		{name: "duplicate with source sample", kind: QCSampleKindFieldDuplicate, rel: QCRelationshipTypeDuplicateOf, input: CreateQCSampleRelationshipInput{RelatedSampleID: clientSample.ID}},
+		{name: "spike with source line", kind: QCSampleKindMatrixSpike, rel: QCRelationshipTypeSpikeOf, input: CreateQCSampleRelationshipInput{AnalysisRequestLine: lines[0].ID}},
+		{name: "calibration with method", kind: QCSampleKindInitialCalibrationVerification, rel: QCRelationshipTypeCalibrationForMethod, input: CreateQCSampleRelationshipInput{MethodID: method.ID}},
+		{name: "method control with method-bearing line", kind: QCSampleKindLaboratoryControlSample, rel: QCRelationshipTypeControlForMethod, input: CreateQCSampleRelationshipInput{AnalysisRequestLine: lines[0].ID}},
+		{name: "batch control with batch id", kind: QCSampleKindMethodBlank, rel: QCRelationshipTypeBatchControl, input: CreateQCSampleRelationshipInput{BatchID: "BATCH-2026-002"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			qcSample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "QC batch", ClientSampleID: tc.name, Matrix: "Water", AnalysisServiceIDs: []string{service.ID}}, actor)
+			if err != nil {
+				t.Fatalf("create qc sample: %v", err)
+			}
+			input := tc.input
+			input.QCSampleID = qcSample.ID
+			input.QCSampleKind = tc.kind
+			input.RelationshipType = tc.rel
+			if _, err := store.CreateQCSampleRelationship(input, actor); err != nil {
+				t.Fatalf("expected valid relationship shape, got %v", err)
+			}
+		})
+	}
+}
+
 func TestQCSampleRelationshipValidationScopeAndAuthorization(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
 	if err != nil {
