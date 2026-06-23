@@ -36,6 +36,7 @@ type pageData struct {
 	Projects                    []lab.Project
 	ClientDefaults              []lab.ClientDefaults
 	Samples                     []lab.Sample
+	Results                     []lab.Result
 	Audit                       []lab.AuditEvent
 	Departments                 []lab.CatalogDepartment
 	Units                       []lab.CatalogUnit
@@ -118,6 +119,8 @@ func serve() error {
 	mux.HandleFunc("POST /api/client-defaults", application.upsertClientDefaults)
 	mux.HandleFunc("POST /api/sample-intake-templates", application.createSampleIntakeTemplate)
 	mux.HandleFunc("POST /api/sample-intake-templates/", application.createSamplesFromTemplate)
+	mux.HandleFunc("POST /api/results", application.createResult)
+	mux.HandleFunc("POST /api/results/", application.resultAction)
 	mux.HandleFunc("POST /api/samples", application.createSample)
 	mux.HandleFunc("GET /api/samples/", application.sampleLabelArtifact)
 	mux.HandleFunc("POST /api/samples/", application.sampleAction)
@@ -433,6 +436,7 @@ func (a *app) pageData(scope lab.Scope, auditLimit int) pageData {
 		Projects:                    a.store.ProjectsForScope(scope),
 		ClientDefaults:              a.store.AllClientDefaultsForScope(scope),
 		Samples:                     a.store.SamplesForScope(scope),
+		Results:                     a.store.ResultsForScope(scope),
 		Audit:                       audit,
 		Departments:                 a.store.CatalogDepartmentsForScope(scope),
 		Units:                       a.store.CatalogUnitsForScope(scope),
@@ -593,6 +597,108 @@ func (a *app) createSamplesFromTemplate(w http.ResponseWriter, r *http.Request) 
 	}
 	samples, err := a.store.CreateSamplesFromTemplateForScope(scopeFromRequest(r), templateID, rows, actor(r))
 	writeMutationResponse(w, r, samples, err)
+}
+
+func (a *app) createResult(w http.ResponseWriter, r *http.Request) {
+	input, ok := resultInputFromRequest(w, r)
+	if !ok {
+		return
+	}
+	result, err := a.store.CreateResultForScope(scopeFromRequest(r), input, actor(r))
+	writeMutationResponse(w, r, result, err)
+}
+
+func (a *app) resultAction(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/results/")
+	if path == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if strings.HasSuffix(path, "/review") {
+		resultID := strings.TrimSuffix(path, "/review")
+		if resultID == "" || strings.Contains(resultID, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		result, err := a.store.ReviewResultForScope(scopeFromRequest(r), resultID, lab.ResultReviewInput{Decision: lab.ResultDecision(r.FormValue("decision")), Comments: r.FormValue("review_comments"), EnforceReviewerSeparation: parseBool(r.FormValue("enforce_reviewer_separation"))}, actor(r))
+		writeMutationResponse(w, r, result, err)
+		return
+	}
+	if strings.HasSuffix(path, "/reopen") {
+		resultID := strings.TrimSuffix(path, "/reopen")
+		if resultID == "" || strings.Contains(resultID, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		result, err := a.store.ReopenResultForScope(scopeFromRequest(r), resultID, r.FormValue("reason"), actor(r))
+		writeMutationResponse(w, r, result, err)
+		return
+	}
+	if strings.Contains(path, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	input, ok := resultInputFromRequest(w, r)
+	if !ok {
+		return
+	}
+	result, err := a.store.UpdateResultForScope(scopeFromRequest(r), path, input, actor(r))
+	writeMutationResponse(w, r, result, err)
+}
+
+func resultInputFromRequest(w http.ResponseWriter, r *http.Request) (lab.ResultInput, bool) {
+	if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		var input lab.ResultInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return lab.ResultInput{}, false
+		}
+		return input, true
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return lab.ResultInput{}, false
+	}
+	return lab.ResultInput{
+		AnalysisRequestLineID: r.FormValue("analysis_request_line_id"),
+		Value:                 parseFloat(r.FormValue("value")),
+		RawValue:              r.FormValue("raw_value"),
+		Unit:                  r.FormValue("unit"),
+		Qualifier:             r.FormValue("qualifier"),
+		MDL:                   parseFloat(r.FormValue("mdl")),
+		RL:                    parseFloat(r.FormValue("rl")),
+		LOQ:                   parseFloat(r.FormValue("loq")),
+		Dilution:              parseFloatDefault(r.FormValue("dilution"), 1),
+		Uncertainty:           parseFloat(r.FormValue("uncertainty")),
+		Comments:              r.FormValue("comments"),
+		AnalystID:             r.FormValue("analyst_id"),
+		InstrumentID:          r.FormValue("instrument_id"),
+	}, true
+}
+
+func parseFloat(raw string) float64 {
+	value, _ := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	return value
+}
+
+func parseFloatDefault(raw string, fallback float64) float64 {
+	if strings.TrimSpace(raw) == "" {
+		return fallback
+	}
+	return parseFloat(raw)
+}
+
+func parseBool(raw string) bool {
+	value, _ := strconv.ParseBool(strings.TrimSpace(raw))
+	return value
 }
 
 func writeMutationResponse(w http.ResponseWriter, r *http.Request, value any, err error) {
