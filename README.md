@@ -51,13 +51,13 @@ make docker-smoke
 
 `make docker-test` uses an isolated `<COMPOSE_PROJECT_NAME>-test` Compose project and clone-specific default image tags, then cleans the Compose project up on exit. `make docker-smoke` uses an isolated `<COMPOSE_PROJECT_NAME>-smoke` Compose project on loopback port `18097`, verifies the seeded API state against an in-container temp data directory, runs the MVP vertical-slice command against the smoke project volume, then removes that smoke-only container/network/volume so immediate reruns start cleanly. Preserved development volumes are left in place and are not silently deleted.
 
-Seed/reset deterministic synthetic local-only data through the running dev API:
+Seed/reset deterministic synthetic local-only data through the running dev API with an explicit synthetic local session:
 
 ```bash
 make demo-reset
 ```
 
-This is safe to rerun and recreates the fixture-backed `C-00001` / `S-000001` demo state from `fixtures/mvp_synthetic_lab.json`.
+The checked-in Compose default creates only a non-secret local dev session token (`psc-local-dev-session-token`) for loopback development and leaves the destructive reset endpoint disabled. `make demo-reset` temporarily starts the local stack with `PSC_ENABLE_DEMO_RESET=true` and sends the session cookie for that synthetic token. For a different local token, use `PSC_INTERNAL_SESSION_TOKEN=$(openssl rand -hex 24) make demo-reset`. This is safe to rerun only for the local prototype volume and recreates the fixture-backed `C-00001` / `S-000001` demo state from `fixtures/mvp_synthetic_lab.json`; do not enable it for shared/customer/prod deployments.
 
 Stop only this checkout's dev/test/smoke Compose projects while preserving named development data volumes:
 

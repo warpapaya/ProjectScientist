@@ -2,7 +2,11 @@
 set -eu
 
 base_url="${1:-http://127.0.0.1:8097}"
-session_token="${PSC_INTERNAL_SESSION_TOKEN:-local-dev-session}"
+session_token="${PSC_INTERNAL_SESSION_TOKEN:-}"
+if [ -z "$session_token" ]; then
+  echo 'PSC_INTERNAL_SESSION_TOKEN is required for protected local demo reset; use make dev-seed/demo-reset or export a synthetic local token.' >&2
+  exit 2
+fi
 
 summary="$(curl -fsS \
   -H 'Accept: application/json' \
@@ -16,4 +20,4 @@ printf '%s' "$summary" | grep -q '"client_id":"C-00001"'
 printf '%s' "$summary" | grep -q '"sample_id":"S-000001"'
 printf '%s' "$summary" | grep -q '"analysis_count":4'
 
-printf 'seeded deterministic synthetic demo data at %s: %s\n' "$base_url" "$summary"
+printf 'seeded deterministic synthetic demo data at %s with protected synthetic session: %s\n' "$base_url" "$summary"
