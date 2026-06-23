@@ -61,6 +61,14 @@ commandSearch?.addEventListener('keydown', (event) => {
   document.querySelector('[data-filter-table] tbody tr:not([hidden])')?.scrollIntoView({behavior: 'smooth', block: 'center'});
 });
 
+// The result grid keeps its autofocus marker for keyboard-first lab operators, but
+// the prospect/demo landing experience should start at the SaaS cockpit instead
+// of jumping halfway down the page on initial load.
+window.addEventListener('load', () => {
+  if (window.location.hash) return;
+  window.setTimeout(() => window.scrollTo({top: 0, left: 0, behavior: 'instant'}), 0);
+});
+
 document.querySelectorAll('[data-command-target]').forEach((field) => {
   field.addEventListener('focus', () => commandSearch?.setAttribute('placeholder', `Focused ${field.getAttribute('placeholder') || field.name}`));
 });
