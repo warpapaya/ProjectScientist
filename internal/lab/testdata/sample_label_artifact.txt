@@ -1,0 +1,10 @@
+PROJECT SCIENTIST SAMPLE LABEL
+Artifact: LBL-S-000001
+Sample: S-000001
+Lab sample: PS-2026-0001
+Client sample: field alpha/01
+Project: Label Project
+Matrix: Water
+Container: S-000001-C01 HDPE 500 mL intact seal
+Barcode: PS-2026-0001
+QR: PSC:lab-test:default-lab:S-000001:PS-2026-0001
