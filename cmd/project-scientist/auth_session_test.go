@@ -66,6 +66,33 @@ func TestCreateClientRejectsExpiredSession(t *testing.T) {
 	}
 }
 
+func TestDemoResetRouteRequiresAuthenticatedSessionWhenEnabled(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app := attachDefaultSession(t, &app{store: store, demoResetEnabled: true, fixturePath: filepath.Join("..", "..", "fixtures", "mvp_synthetic_lab.json")})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/demo/reset", nil)
+	req.Header.Set("Accept", "application/json")
+	rr := httptest.NewRecorder()
+
+	app.routes().ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unauthenticated demo reset route, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	authenticatedReq := httptest.NewRequest(http.MethodPost, "/api/demo/reset", nil)
+	authenticatedReq.Header.Set("Accept", "application/json")
+	addDefaultSessionCookie(authenticatedReq)
+	authenticatedRR := httptest.NewRecorder()
+	app.routes().ServeHTTP(authenticatedRR, authenticatedReq)
+	if authenticatedRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 for authenticated demo reset route, got %d body=%s", authenticatedRR.Code, authenticatedRR.Body.String())
+	}
+}
+
 func TestCreateClientBindsTenantToServerSideSessionNotRequestInputs(t *testing.T) {
 	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
 	if err != nil {

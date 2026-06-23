@@ -46,6 +46,21 @@ The UI is available on loopback only:
 http://127.0.0.1:8097
 ```
 
+Compose provisions a synthetic local development session by default, not a real credential:
+
+```text
+PSC_INTERNAL_SESSION_TOKEN=psc-local-dev-session-token
+PSC_INTERNAL_SESSION_USER=lab-dev
+```
+
+Protected routes require the `psc_internal_session` cookie even in local Docker. Browser/manual API checks can use the default synthetic token, or an operator can override it without committing secrets:
+
+```bash
+export PSC_INTERNAL_SESSION_TOKEN="$(openssl rand -hex 24)"
+make dev-up
+curl -fsS -H "Cookie: psc_internal_session=$PSC_INTERNAL_SESSION_TOKEN" http://127.0.0.1:8097/api/state
+```
+
 ## Concurrent clones / Kanban workers
 
 The default Make workflow derives a lowercase Compose project name from the repo directory:
@@ -117,7 +132,7 @@ make docker-smoke
 make dev-down
 ```
 
-`make docker-smoke` starts an isolated smoke Compose project, waits for `/healthz`, seeds synthetic demo data through the public local API, verifies `/api/state` contains the synthetic lab, runs the MVP vertical-slice CLI smoke against the smoke project volume, and then removes the smoke-only container/network/volume through an exit trap. It intentionally uses container-local temp storage and a disposable smoke volume instead of the named development data volume so a preserved lab volume is never deleted or rewritten just to make smoke pass. The seed path is API-level so it exercises the running container instead of mutating files directly.
+`make docker-smoke` starts an isolated smoke Compose project, waits for `/healthz`, enables the destructive demo reset only for that disposable smoke project, seeds synthetic demo data through the protected public local API with the synthetic session cookie, verifies `/api/state` contains the synthetic lab through the same session boundary, runs the MVP vertical-slice CLI smoke against the smoke project volume, and then removes the smoke-only container/network/volume through an exit trap. It intentionally uses container-local temp storage and a disposable smoke volume instead of the named development data volume so a preserved lab volume is never deleted or rewritten just to make smoke pass. The seed path is API-level so it exercises the running container instead of mutating files directly.
 
 ## Deterministic local demo seed/reset
 
@@ -137,7 +152,7 @@ client=Okefenokee Synthetic Water Authority
 analyses=4
 ```
 
-The reset endpoint is disabled unless `PSC_ENABLE_DEMO_RESET=true`; the checked-in Compose dev service defaults it to `false` so a browser-reachable shared stack cannot destructively reseed itself by default. Local validation paths such as `make demo-reset` and `make docker-smoke` opt in explicitly, send the configured `psc_internal_session` cookie, and point `PSC_SYNTHETIC_FIXTURE_PATH` at `/app/fixtures/mvp_synthetic_lab.json` inside the runtime image. The reset operation is explicitly classified as a local-only admin configuration action: `ResetAndSeedSyntheticDemo` authorizes `admin.configure` against the authenticated internal session actor before clearing data, and unauthenticated requests are rejected before reseeding. Do not enable this endpoint on any customer, shared, or production-like deployment.
+The reset endpoint is disabled unless `PSC_ENABLE_DEMO_RESET=true`; the checked-in Compose dev service defaults it to `false` so a browser-reachable shared stack cannot destructively reseed itself by default. Compose and Makefile local workflows use the non-secret synthetic `PSC_INTERNAL_SESSION_TOKEN` default `psc-local-dev-session-token` unless the operator exports a different local token. Local validation paths such as `make demo-reset` and `make docker-smoke` opt in explicitly, send the configured `psc_internal_session` cookie, and point `PSC_SYNTHETIC_FIXTURE_PATH` at `/app/fixtures/mvp_synthetic_lab.json` inside the runtime image. The reset operation is explicitly classified as a local-only admin configuration action: `ResetAndSeedSyntheticDemo` authorizes `admin.configure` against the authenticated internal session actor before clearing data, and unauthenticated requests are rejected before reseeding. Do not enable this endpoint on any customer, shared, or production-like deployment.
 
 ## Data persistence and cleanup
 
