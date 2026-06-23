@@ -1,6 +1,7 @@
 package main
 
 import (
+	"html/template"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -145,6 +146,104 @@ func TestConfiguredInternalSessionCanAuthorizeLocalDemoReset(t *testing.T) {
 	t.Fatalf("configured internal session must include admin role for authorized local demo reset, got %#v", session.Actor.Roles)
 }
 
+func TestBrowserMutationRequiresCSRFToken(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app, token := newSessionTestAppWithSession(t, store, "alpha-manager", "tenant-alpha", lab.DefaultLabID, time.Now().Add(time.Hour))
+
+	form := url.Values{}
+	form.Set("name", "Missing CSRF Lab")
+	form.Set("email", "missing-csrf@example.test")
+	req := httptest.NewRequest(http.MethodPost, "/api/clients", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rr := httptest.NewRecorder()
+
+	app.routes().ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for missing CSRF token, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := len(store.ClientsForScope(lab.Scope{TenantID: "tenant-alpha", LabID: lab.DefaultLabID})); got != 0 {
+		t.Fatalf("missing CSRF token should create no clients, got %d", got)
+	}
+}
+
+func TestBrowserMutationAllowsValidSessionAndCSRFToken(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app, token := newSessionTestAppWithSession(t, store, "alpha-manager", "tenant-alpha", lab.DefaultLabID, time.Now().Add(time.Hour))
+
+	form := url.Values{}
+	form.Set("name", "CSRF Protected Lab")
+	form.Set("email", "csrf@example.test")
+	tokenValue := app.sessions[token].CSRFToken
+	req := httptest.NewRequest(http.MethodPost, "/api/clients", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set(csrfHeaderName, tokenValue)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rr := httptest.NewRecorder()
+
+	app.routes().ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for valid session+CSRF, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	clients := store.ClientsForScope(lab.Scope{TenantID: "tenant-alpha", LabID: lab.DefaultLabID})
+	if len(clients) != 1 || clients[0].Name != "CSRF Protected Lab" {
+		t.Fatalf("expected CSRF-protected mutation to create one client, got %#v", clients)
+	}
+}
+
+func TestConfiguredInternalSessionsSetCSRFToken(t *testing.T) {
+	t.Setenv("PSC_INTERNAL_SESSION_TOKEN", "session-secret")
+	t.Setenv("PSC_INTERNAL_CSRF_TOKEN", "csrf-secret")
+	sessions := configuredInternalSessions()
+	session, ok := sessions["session-secret"]
+	if !ok {
+		t.Fatalf("configured session missing")
+	}
+	if session.CSRFToken != "csrf-secret" {
+		t.Fatalf("expected explicit CSRF token, got %q", session.CSRFToken)
+	}
+
+	t.Setenv("PSC_INTERNAL_CSRF_TOKEN", "")
+	sessions = configuredInternalSessions()
+	if got := sessions["session-secret"].CSRFToken; got == "" || got == "session-secret" {
+		t.Fatalf("expected derived non-empty CSRF token distinct from session token, got %q", got)
+	}
+}
+
+func TestIndexRendersCSRFTokenForBrowserForms(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app := attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))})
+
+	req := newDefaultSessionRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+	app.index(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected index 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	csrf := app.sessions[defaultTestSessionToken].CSRFToken
+	if !strings.Contains(body, `meta name="psc-csrf-token" content="`+csrf+`"`) {
+		t.Fatalf("index missing CSRF meta token")
+	}
+	if !strings.Contains(body, `name="csrf_token" value="`+csrf+`"`) {
+		t.Fatalf("index missing hidden CSRF form field")
+	}
+}
+
 const defaultTestSessionToken = "test-session-default"
 
 func newSessionTestApp(store *lab.Store) *app {
@@ -172,6 +271,7 @@ func attachDefaultSession(t *testing.T, application *app) *app {
 		}),
 		Scope:     lab.Scope{TenantID: lab.DefaultTenantID, LabID: lab.DefaultLabID},
 		ExpiresAt: time.Now().Add(time.Hour),
+		CSRFToken: deriveCSRFToken(defaultTestSessionToken),
 	}
 	return application
 }
@@ -203,6 +303,7 @@ func newSessionTestAppWithSession(t *testing.T, store *lab.Store, userID, tenant
 		}),
 		Scope:     lab.Scope{TenantID: tenantID, LabID: labID},
 		ExpiresAt: expiresAt,
+		CSRFToken: deriveCSRFToken(token),
 	}
 	return application, token
 }

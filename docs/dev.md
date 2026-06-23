@@ -137,7 +137,44 @@ client=Okefenokee Synthetic Water Authority
 analyses=4
 ```
 
-The reset endpoint is disabled unless `PSC_ENABLE_DEMO_RESET=true`; the checked-in Compose dev service defaults it to `false` so a browser-reachable shared stack cannot destructively reseed itself by default. Local validation paths such as `make demo-reset` and `make docker-smoke` opt in explicitly, send the configured `psc_internal_session` cookie, and point `PSC_SYNTHETIC_FIXTURE_PATH` at `/app/fixtures/mvp_synthetic_lab.json` inside the runtime image. The reset operation is explicitly classified as a local-only admin configuration action: `ResetAndSeedSyntheticDemo` authorizes `admin.configure` against the authenticated internal session actor before clearing data, and unauthenticated requests are rejected before reseeding. Do not enable this endpoint on any customer, shared, or production-like deployment.
+The reset endpoint is disabled unless `PSC_ENABLE_DEMO_RESET=true`; the checked-in Compose dev service defaults it to `false` so a browser-reachable shared stack cannot destructively reseed itself by default. Local validation paths such as `make demo-reset` and `make docker-smoke` opt in explicitly, send the configured `psc_internal_session` cookie plus matching CSRF token, and point `PSC_SYNTHETIC_FIXTURE_PATH` at `/app/fixtures/mvp_synthetic_lab.json` inside the runtime image. The reset operation is explicitly classified as a local-only admin configuration action: `ResetAndSeedSyntheticDemo` authorizes `admin.configure` against the authenticated internal session actor before clearing data, and unauthenticated requests are rejected before reseeding. Do not enable this endpoint on any customer, shared, or production-like deployment.
+
+## Lab-only browser auth, CSRF, cookie, and proxy posture
+
+This repository supports only a private lab-validation browser posture. It does not implement a production login system, identity-provider callback, TLS termination, public reverse-proxy configuration, or customer-facing session issuance.
+
+Current server-side behavior:
+
+- A browser request is authenticated only when it presents the `psc_internal_session` cookie with a value configured in `PSC_INTERNAL_SESSION_TOKEN`.
+- The session's trusted tenant/lab/user claims are configured server-side through `PSC_INTERNAL_SESSION_TENANT_ID`, `PSC_INTERNAL_SESSION_LAB_ID`, `PSC_INTERNAL_SESSION_USER`, and `PSC_INTERNAL_SESSION_TTL`; request headers/forms cannot widen that scope.
+- Browser mutation methods (`POST`, `PUT`, `PATCH`, `DELETE`) require a CSRF token that matches the authenticated session. Send it in the `X-PSC-CSRF-Token` header or as the `csrf_token` form field. If `PSC_INTERNAL_CSRF_TOKEN` is unset, the app derives a deterministic CSRF token from the configured internal session token for local lab validation; set `PSC_INTERNAL_CSRF_TOKEN` explicitly for shared validation.
+- The server renders the CSRF token into authenticated HTML forms and exposes it to the local UI script through a same-origin meta tag so dynamically/minimally templated POST forms receive the hidden field.
+- The app does not issue `Set-Cookie`; cookie creation and attributes are the responsibility of the private lab-validation operator or approved ingress wrapper.
+
+Required cookie posture if a browser session cookie is issued outside this app:
+
+```text
+Set-Cookie: psc_internal_session=<opaque-token>; Path=/; HttpOnly; Secure; SameSite=Lax
+```
+
+Use `SameSite=Strict` when same-site navigation from external tooling is not needed. Do not use `SameSite=None` unless a later approved task adds a cross-site embedding requirement and TLS-only controls. The cookie value must remain opaque and must not be logged, committed, embedded in docs, or reused across environments.
+
+Proxy/ingress assumptions for private lab validation:
+
+- Bind the app to loopback or a private network only unless a separate Aegis/Friday gate approves external exposure.
+- Terminate HTTPS at the approved private ingress before setting `Secure` cookies; plain HTTP is acceptable only on loopback/local Docker paths where no browser cookie is shared beyond the local machine.
+- Do not rely on `X-Forwarded-*` headers for authorization or scheme detection in the current app. A proxy may add them for logs, but the app does not trust or require them for auth decisions.
+- Preserve `Host`, pass the session cookie unchanged, and do not strip `X-PSC-CSRF-Token` when API clients use the header path.
+- Keep `PSC_ENABLE_DEMO_RESET=false` outside disposable local lab runs.
+
+Validation commands for this posture:
+
+```bash
+go test -mod=readonly ./cmd/project-scientist -run 'TestBrowserMutation|TestConfiguredInternalSessions|TestIndexRendersCSRF'
+go test -mod=readonly ./...
+```
+
+No production-readiness claim is made by this CSRF/cookie posture. It only closes the private lab-validation browser blocker enough for a later ingress/TLS gate to evaluate a specific approved environment.
 
 ## Data persistence and cleanup
 

@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -31,6 +34,7 @@ type app struct {
 
 type pageData struct {
 	Scope                       lab.Scope
+	CSRFToken                   string
 	Clients                     []lab.Client
 	Sites                       []lab.Site
 	Contacts                    []lab.Contact
@@ -583,6 +587,7 @@ func (a *app) pageData(scope lab.Scope, auditLimit int, actor lab.ActorContext) 
 	references := a.store.AllSampleReferenceItemsForScope(scope)
 	return pageData{
 		Scope:                       scope,
+		CSRFToken:                   a.csrfTokenForRequest(scope, actor),
 		Clients:                     a.store.ClientsForScope(scope),
 		Sites:                       a.store.SitesForScope(scope),
 		Contacts:                    a.store.ContactsForScope(scope),
@@ -1436,12 +1441,18 @@ func parseOptionalRequestTime(raw string) time.Time {
 	return time.Time{}
 }
 
-const sessionCookieName = "psc_internal_session"
+const (
+	sessionCookieName   = "psc_internal_session"
+	csrfHeaderName      = "X-PSC-CSRF-Token"
+	csrfFormFieldName   = "csrf_token"
+	csrfTokenDeriveSalt = "project-scientist-csrf-v1:"
+)
 
 type authenticatedSession struct {
 	Actor     lab.ActorContext
 	Scope     lab.Scope
 	ExpiresAt time.Time
+	CSRFToken string
 }
 
 func configuredInternalSessions() map[string]authenticatedSession {
@@ -1459,6 +1470,10 @@ func configuredInternalSessions() map[string]authenticatedSession {
 			ttl = parsed
 		}
 	}
+	csrfToken := strings.TrimSpace(os.Getenv("PSC_INTERNAL_CSRF_TOKEN"))
+	if csrfToken == "" {
+		csrfToken = deriveCSRFToken(token)
+	}
 	return map[string]authenticatedSession{
 		token: {
 			Actor: lab.MustActorContext(lab.ActorContextInput{
@@ -1472,6 +1487,7 @@ func configuredInternalSessions() map[string]authenticatedSession {
 			}),
 			Scope:     lab.Scope{TenantID: tenantID, LabID: labID},
 			ExpiresAt: time.Now().Add(ttl),
+			CSRFToken: csrfToken,
 		},
 	}
 }
@@ -1483,6 +1499,15 @@ func (a *app) requireSessionBoundary(next http.Handler) http.Handler {
 			return
 		}
 		if _, _, ok := a.requireAuthenticatedRequest(w, r); !ok {
+			return
+		}
+		session, err := a.currentSession(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+		if isCSRFProtectedMethod(r.Method) && !validCSRFToken(r, session.CSRFToken) {
+			http.Error(w, "csrf token is required", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -1525,6 +1550,44 @@ func (a *app) currentSession(r *http.Request) (authenticatedSession, error) {
 		return authenticatedSession{}, errors.New("authenticated session scope is invalid")
 	}
 	return session, nil
+}
+
+func (a *app) csrfTokenForRequest(scope lab.Scope, actor lab.ActorContext) string {
+	if a == nil {
+		return ""
+	}
+	for _, session := range a.sessions {
+		if session.Actor.UserID == actor.UserID && session.Scope.TenantID == scope.TenantID && session.Scope.LabID == scope.LabID && session.CSRFToken != "" {
+			return session.CSRFToken
+		}
+	}
+	return ""
+}
+
+func isCSRFProtectedMethod(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func validCSRFToken(r *http.Request, expected string) bool {
+	expected = strings.TrimSpace(expected)
+	if expected == "" {
+		return false
+	}
+	supplied := strings.TrimSpace(r.Header.Get(csrfHeaderName))
+	if supplied == "" {
+		supplied = strings.TrimSpace(r.FormValue(csrfFormFieldName))
+	}
+	return supplied != "" && subtle.ConstantTimeCompare([]byte(supplied), []byte(expected)) == 1
+}
+
+func deriveCSRFToken(sessionToken string) string {
+	sum := sha256.Sum256([]byte(csrfTokenDeriveSalt + strings.TrimSpace(sessionToken)))
+	return hex.EncodeToString(sum[:])
 }
 
 func requestedScope(r *http.Request) (lab.Scope, bool) {
