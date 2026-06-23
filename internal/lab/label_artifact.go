@@ -47,16 +47,13 @@ func (s *Store) GenerateSampleLabelArtifactForScope(scope Scope, sampleID string
 			deniedErr = ErrAuthorizationDenied
 			return nil
 		}
-		sample, err := sampleByIDTx(tx, sampleID)
+		sample, err := sampleByIDForScopeTx(tx, scope, sampleID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("unknown sample %q", sampleID)
+				deniedErr = fmt.Errorf("unknown sample %q", sampleID)
+				return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "sample.label_artifact.requested", Outcome: AuditOutcomeDenied, Reason: "sample_not_found", Resource: AuditResource{Type: "sample", ID: sampleID}})
 			}
 			return err
-		}
-		if sample.TenantID != scope.TenantID || sample.LabID != scope.LabID {
-			deniedErr = fmt.Errorf("sample %q is outside requested tenant/lab scope", sampleID)
-			return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "sample.label_artifact.requested", Outcome: AuditOutcomeDenied, Reason: "scope_mismatch", Resource: AuditResource{Type: "sample", ID: sampleID}})
 		}
 		containerReferenceCodes, err := sampleContainerReferenceCodesTx(tx, scope, sample)
 		if err != nil {
