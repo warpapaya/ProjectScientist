@@ -1,0 +1,246 @@
+{
+  "generated_from": "PSC-RM-084 internal synthetic drill",
+  "evidence_dir": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z",
+  "tails": {
+    "mvp_verify_suite": {
+      "db_path": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/project-scientist-mvp-suite.db",
+      "event_count": 51,
+      "denied_count": 4,
+      "checkpoints": [
+        {
+          "name": "latest",
+          "sequence": 51,
+          "hash": "ef5d9c3feba498b7d977f17434429c8a09100cc345710698ce5410d7f7326f88",
+          "created_at": "2026-06-23T05:22:14.392425Z"
+        }
+      ],
+      "last_events_desc": [
+        {
+          "sequence": 51,
+          "event_id": "audit-000051",
+          "timestamp": "2026-06-23T05:22:14.392382Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "mvp-analyst",
+          "action": "result.update.denied",
+          "outcome": "denied",
+          "reason": "result_locked",
+          "correlation_id": "mvp-005",
+          "previous_hash": "524747c6bf3a0cd05ac8c4bbf988f583f5069685fb60516fb640c907aab2b3f7",
+          "hash": "ef5d9c3feba498b7d977f17434429c8a09100cc345710698ce5410d7f7326f88"
+        },
+        {
+          "sequence": 50,
+          "event_id": "audit-000050",
+          "timestamp": "2026-06-23T05:22:14.39211Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "mvp-releaser",
+          "action": "report.artifact.released",
+          "outcome": "allowed",
+          "reason": "",
+          "correlation_id": "mvp-005",
+          "previous_hash": "d52c1853c65599884a3366221cbcccbc68db179b8c18f3755335e2df9f784640",
+          "hash": "524747c6bf3a0cd05ac8c4bbf988f583f5069685fb60516fb640c907aab2b3f7"
+        },
+        {
+          "sequence": 49,
+          "event_id": "audit-000049",
+          "timestamp": "2026-06-23T05:22:14.391542Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "psc-mvp-verify-suite",
+          "action": "sample.transitioned",
+          "outcome": "allowed",
+          "reason": "",
+          "correlation_id": "local-cli-request",
+          "previous_hash": "931e4aa01dd7b96f45c300b2bde18512fa97db308daafc83b8930cf7731d14fe",
+          "hash": "d52c1853c65599884a3366221cbcccbc68db179b8c18f3755335e2df9f784640"
+        },
+        {
+          "sequence": 48,
+          "event_id": "audit-000048",
+          "timestamp": "2026-06-23T05:22:14.391305Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "psc-mvp-verify-suite",
+          "action": "qc_batch.status.changed",
+          "outcome": "allowed",
+          "reason": "",
+          "correlation_id": "local-cli-request",
+          "previous_hash": "eb50a54bba2ca11887231086dc7f0683219dc7a56e291c2878ccf91604c52e20",
+          "hash": "931e4aa01dd7b96f45c300b2bde18512fa97db308daafc83b8930cf7731d14fe"
+        },
+        {
+          "sequence": 47,
+          "event_id": "audit-000047",
+          "timestamp": "2026-06-23T05:22:14.391049Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "psc-mvp-verify-suite",
+          "action": "qc_batch.status.changed",
+          "outcome": "allowed",
+          "reason": "",
+          "correlation_id": "local-cli-request",
+          "previous_hash": "b0b7f1d286e472b2d366e4a0e2de1f2cf43a68689b35a07ce21117ed9dbdb939",
+          "hash": "eb50a54bba2ca11887231086dc7f0683219dc7a56e291c2878ccf91604c52e20"
+        },
+        {
+          "sequence": 46,
+          "event_id": "audit-000046",
+          "timestamp": "2026-06-23T05:22:14.390862Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "psc-mvp-verify-suite",
+          "action": "sample.release.blocked",
+          "outcome": "denied",
+          "reason": "qc_not_accepted",
+          "correlation_id": "local-cli-request",
+          "previous_hash": "955555f5a5ba26aae59f20977fc8d789c66d07455e9b79c569cbb748db57bc08",
+          "hash": "b0b7f1d286e472b2d366e4a0e2de1f2cf43a68689b35a07ce21117ed9dbdb939"
+        },
+        {
+          "sequence": 45,
+          "event_id": "audit-000045",
+          "timestamp": "2026-06-23T05:22:14.390609Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "psc-mvp-verify-suite",
+          "action": "qc_batch.relationship.created",
+          "outcome": "allowed",
+          "reason": "",
+          "correlation_id": "local-cli-request",
+          "previous_hash": "58a28f7163602b47a663af993a644ed92d4f4d9e99f7b88f15c12a1634e77cbe",
+          "hash": "955555f5a5ba26aae59f20977fc8d789c66d07455e9b79c569cbb748db57bc08"
+        },
+        {
+          "sequence": 44,
+          "event_id": "audit-000044",
+          "timestamp": "2026-06-23T05:22:14.390414Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "psc-mvp-verify-suite",
+          "action": "qc_batch.item.added",
+          "outcome": "allowed",
+          "reason": "",
+          "correlation_id": "local-cli-request",
+          "previous_hash": "d42e52940008da2c010c14ec6d70730698516745f8fc0a5487854c17fe510333",
+          "hash": "58a28f7163602b47a663af993a644ed92d4f4d9e99f7b88f15c12a1634e77cbe"
+        },
+        {
+          "sequence": 43,
+          "event_id": "audit-000043",
+          "timestamp": "2026-06-23T05:22:14.39021Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "psc-mvp-verify-suite",
+          "action": "qc_batch.item.added",
+          "outcome": "allowed",
+          "reason": "",
+          "correlation_id": "local-cli-request",
+          "previous_hash": "7be7d708193250858961f4facb587edf4715c25affc214467287a1a7aa904825",
+          "hash": "d42e52940008da2c010c14ec6d70730698516745f8fc0a5487854c17fe510333"
+        },
+        {
+          "sequence": 42,
+          "event_id": "audit-000042",
+          "timestamp": "2026-06-23T05:22:14.389992Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "psc-mvp-verify-suite",
+          "action": "qc_batch.created",
+          "outcome": "allowed",
+          "reason": "",
+          "correlation_id": "local-cli-request",
+          "previous_hash": "4d7dcc2adf167db7ec942d787650744d5bdca346c8bb697d9e0cf88c42c4aaf3",
+          "hash": "7be7d708193250858961f4facb587edf4715c25affc214467287a1a7aa904825"
+        },
+        {
+          "sequence": 41,
+          "event_id": "audit-000041",
+          "timestamp": "2026-06-23T05:22:14.389816Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "psc-mvp-verify-suite",
+          "action": "sample.created",
+          "outcome": "allowed",
+          "reason": "",
+          "correlation_id": "local-cli-request",
+          "previous_hash": "af3530c82b9319eca14042d7293cb7c6b92719b2f97de7293f196afb56211e31",
+          "hash": "4d7dcc2adf167db7ec942d787650744d5bdca346c8bb697d9e0cf88c42c4aaf3"
+        },
+        {
+          "sequence": 40,
+          "event_id": "audit-000040",
+          "timestamp": "2026-06-23T05:22:14.389526Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "psc-mvp-verify-suite",
+          "action": "sample.transitioned",
+          "outcome": "allowed",
+          "reason": "",
+          "correlation_id": "local-cli-request",
+          "previous_hash": "ac6a6e5ce609c12121ce8e1ff8417989307a752e3e1ae661bbc20d64a8e002f5",
+          "hash": "af3530c82b9319eca14042d7293cb7c6b92719b2f97de7293f196afb56211e31"
+        }
+      ]
+    },
+    "backup_restore": {
+      "db_path": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof/backup/project-scientist.db",
+      "event_count": 3,
+      "denied_count": 0,
+      "checkpoints": [
+        {
+          "name": "latest",
+          "sequence": 3,
+          "hash": "56688410e42a4458b62ce244aed63c2c70f0cd74525d6e6bce7c4a5c42d048bd",
+          "created_at": "2026-06-23T05:22:13.990235Z"
+        }
+      ],
+      "last_events_desc": [
+        {
+          "sequence": 3,
+          "event_id": "audit-000003",
+          "timestamp": "2026-06-23T05:22:13.990138Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "backup-proof-operator",
+          "action": "sample.transitioned",
+          "outcome": "allowed",
+          "reason": "",
+          "correlation_id": "backup-restore-proof",
+          "previous_hash": "f5995d440b88b92dc90a231c40eaf12b4379db4e8502cd066bb92684523be2be",
+          "hash": "56688410e42a4458b62ce244aed63c2c70f0cd74525d6e6bce7c4a5c42d048bd"
+        },
+        {
+          "sequence": 2,
+          "event_id": "audit-000002",
+          "timestamp": "2026-06-23T05:22:13.989681Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "backup-proof-operator",
+          "action": "sample.created",
+          "outcome": "allowed",
+          "reason": "",
+          "correlation_id": "backup-restore-proof",
+          "previous_hash": "bd1ac8404bf2df3335b19efa081401dbbe5b50cdb6e2de18a82cc0bcd049467f",
+          "hash": "f5995d440b88b92dc90a231c40eaf12b4379db4e8502cd066bb92684523be2be"
+        },
+        {
+          "sequence": 1,
+          "event_id": "audit-000001",
+          "timestamp": "2026-06-23T05:22:13.989096Z",
+          "tenant_id": "lab-test",
+          "lab_id": "default-lab",
+          "actor": "backup-proof-operator",
+          "action": "client.created",
+          "outcome": "allowed",
+          "reason": "",
+          "correlation_id": "backup-restore-proof",
+          "previous_hash": "",
+          "hash": "bd1ac8404bf2df3335b19efa081401dbbe5b50cdb6e2de18a82cc0bcd049467f"
+        }
+      ]
+    }
+  }
+}

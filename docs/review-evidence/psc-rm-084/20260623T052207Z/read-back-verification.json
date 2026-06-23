@@ -1,0 +1,47 @@
+{
+  "evidence_dir": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z",
+  "checks": [
+    {
+      "path": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/psc-rm-084-internal-synthetic-drill-evidence.md",
+      "exists": true,
+      "bytes": 6353,
+      "sha256": "4e9f75dcc2ca80ec09513201ceb39c51a91a0f1b1f3023229862b267cf25c0d4"
+    },
+    {
+      "path": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/command-transcript.log",
+      "exists": true,
+      "bytes": 8619,
+      "sha256": "608e1641c4ea97604b9f4bed56b2d3bf5f0e607b63494392da3cb8745a0335fb"
+    },
+    {
+      "path": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/packet-and-artifact-hashes.sha256",
+      "exists": false,
+      "bytes": null,
+      "sha256": null
+    },
+    {
+      "path": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/audit-tail.json",
+      "exists": true,
+      "bytes": 10089,
+      "sha256": "ce3023007928ee652aa6dc46a37fed74addd17263890bb0a5ff7a04e55ff2055"
+    },
+    {
+      "path": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof/proof-summary.md",
+      "exists": true,
+      "bytes": 1486,
+      "sha256": "b9dca80a1693191de3fedae1f5ef0b94d3a556a680da5e1bc4416214b9f0314f"
+    },
+    {
+      "path": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/backup-restore-proof/proof-result.json",
+      "exists": true,
+      "bytes": 3767,
+      "sha256": "eacf67e0c2295858dc68aab11b7dbc77e470c1e3ad9783c3ae1e46e1b91a2835"
+    },
+    {
+      "path": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness/docs/review-evidence/psc-rm-084/20260623T052207Z/artifacts/mvp/artifacts/mvp-verification-suite.json",
+      "exists": true,
+      "bytes": 1592,
+      "sha256": "c7bac1c657496028f986a033961a0361632a2cc747dddbc7f783bab986c0fc20"
+    }
+  ]
+}
