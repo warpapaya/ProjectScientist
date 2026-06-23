@@ -91,10 +91,14 @@ func run(args []string, stdout, stderr io.Writer) error {
 		if len(args) >= 3 && args[2] == "vertical-slice" {
 			return mvpVerticalSlice(args[3:], stdout, stderr)
 		}
+	case "customer-workflow":
+		if len(args) >= 3 && args[2] == "smoke-matrix" {
+			return customerWorkflowSmokeMatrix(args[3:], stdout, stderr)
+		}
 	case "smoke":
 		return smokeHTTP(args[2:], stdout, stderr)
 	}
-	return fmt.Errorf("unknown command; supported: serve, audit verify, db migrate, db status, seed, reset, backup, restore, mvp vertical-slice, smoke")
+	return fmt.Errorf("unknown command; supported: serve, audit verify, db migrate, db status, seed, reset, backup, restore, mvp vertical-slice, customer-workflow smoke-matrix, smoke")
 }
 
 func serve() error {
@@ -388,6 +392,30 @@ func mvpVerticalSlice(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(stdout, "mvp vertical-slice ok db=%s sample=%s worksheet=%s report_artifact=%s denied_controls=%d\n", *dbPath, summary.Sample.ID, summary.Worksheet.ID, summary.Report.Artifact.ID, len(summary.DeniedControls))
+	return nil
+}
+
+func customerWorkflowSmokeMatrix(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("customer-workflow smoke-matrix", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dbPath := fs.String("db", defaultDBPath(), "SQLite database path")
+	fixturePath := fs.String("fixture", filepath.Join("fixtures", "golden_migration_dataset.json"), "synthetic golden migration fixture path")
+	gapReportPath := fs.String("gap-report", filepath.Join("docs", "customer-workflow-gap-report.md"), "source customer workflow gap report path")
+	outDir := fs.String("out", filepath.Join("artifacts", "customer-workflow-smoke"), "artifact output directory")
+	commandOutput := fs.String("command-output", "not run; caller did not provide command output", "captured command output evidence to embed in each lane")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	store, err := lab.OpenSQLiteStore(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	matrix, err := store.GenerateCustomerWorkflowSmokeMatrix(lab.CustomerWorkflowSmokeInput{FixturePath: *fixturePath, GapReportPath: *gapReportPath, OutputDir: *outDir, CommandOutput: *commandOutput}, cliActor("psc-customer-workflow-smoke", lab.RoleAdmin))
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "customer workflow smoke-matrix ok lanes=%d green=%d yellow=%d red=%d matrix=%s\n", len(matrix.Lanes), matrix.StatusCounts[lab.SmokeStatusGreen], matrix.StatusCounts[lab.SmokeStatusYellow], matrix.StatusCounts[lab.SmokeStatusRed], matrix.MatrixArtifactPath)
 	return nil
 }
 
