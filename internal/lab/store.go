@@ -1467,7 +1467,8 @@ func appendAuditTx(tx *sql.Tx, write auditWrite) error {
 		return err
 	}
 	actor := normalizeActorContext(write.Actor, fmt.Sprintf("audit-%06d", nextAudit))
-	event := AuditEvent{EventID: fmt.Sprintf("audit-%06d", nextAudit), TenantID: scope.TenantID, LabID: scope.LabID, Timestamp: time.Now().UTC(), Actor: actor.UserID, ActorContext: actor, Resource: write.Resource, Action: strings.TrimSpace(write.Action), Outcome: write.Outcome, Reason: strings.TrimSpace(write.Reason), CorrelationID: actor.CorrelationID, Sequence: int64(nextAudit), Details: nonNilMap(write.Details), PreviousHash: previousHash}
+	details := sanitizeAuditDetails(write.Action, write.Details)
+	event := AuditEvent{EventID: fmt.Sprintf("audit-%06d", nextAudit), TenantID: scope.TenantID, LabID: scope.LabID, Timestamp: time.Now().UTC(), Actor: actor.UserID, ActorContext: actor, Resource: write.Resource, Action: strings.TrimSpace(write.Action), Outcome: write.Outcome, Reason: strings.TrimSpace(write.Reason), CorrelationID: actor.CorrelationID, Sequence: int64(nextAudit), Details: details, PreviousHash: previousHash}
 	event.Hash = hashEvent(event)
 	if err := ValidateAuditEvent(event); err != nil {
 		return err
