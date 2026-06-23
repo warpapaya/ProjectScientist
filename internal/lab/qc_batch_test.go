@@ -74,6 +74,9 @@ func TestQCRelationshipLinksQCItemToClientSampleLineAndAudits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create batch: %v", err)
 	}
+	if _, err := store.AddQCItemToBatch(batch.ID, CreateQCItemInput{SampleID: clientSample.ID, Role: QCItemRoleClientSample}, actor); err != nil {
+		t.Fatalf("add client item: %v", err)
+	}
 	qcItem, err := store.AddQCItemToBatch(batch.ID, CreateQCItemInput{SampleID: qcSample.ID, Role: QCItemRoleQCSample, QCSampleKind: QCSampleKindLabDuplicate}, actor)
 	if err != nil {
 		t.Fatalf("add QC item: %v", err)
@@ -100,6 +103,126 @@ func TestQCRelationshipLinksQCItemToClientSampleLineAndAudits(t *testing.T) {
 	}
 }
 
+func TestQCRelationshipRejectsRelatedSampleOutsideBatchComposition(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	actor := catalogTestActor()
+	client, method, service := createQCClientMethodAndService(t, store, actor)
+	batchSample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "QC batch", ClientSampleID: "BATCH-C-1", Matrix: "Water", AnalysisServiceIDs: []string{service.ID}}, actor)
+	if err != nil {
+		t.Fatalf("create batch sample: %v", err)
+	}
+	outsideSample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "QC batch", ClientSampleID: "OUTSIDE-C-1", Matrix: "Water", AnalysisServiceIDs: []string{service.ID}}, actor)
+	if err != nil {
+		t.Fatalf("create outside sample: %v", err)
+	}
+	qcSample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "QC batch", ClientSampleID: "MB-OUTSIDE", Matrix: "Water", AnalysisServiceIDs: []string{service.ID}}, actor)
+	if err != nil {
+		t.Fatalf("create qc sample: %v", err)
+	}
+	batch, err := store.CreateQCBatch(CreateQCBatchInput{Name: "Reject outside related sample", MethodID: method.ID, Matrix: "Water"}, actor)
+	if err != nil {
+		t.Fatalf("create batch: %v", err)
+	}
+	if _, err := store.AddQCItemToBatch(batch.ID, CreateQCItemInput{SampleID: batchSample.ID, Role: QCItemRoleClientSample}, actor); err != nil {
+		t.Fatalf("add batch sample item: %v", err)
+	}
+	qcItem, err := store.AddQCItemToBatch(batch.ID, CreateQCItemInput{SampleID: qcSample.ID, Role: QCItemRoleQCSample, QCSampleKind: QCSampleKindMethodBlank}, actor)
+	if err != nil {
+		t.Fatalf("add QC item: %v", err)
+	}
+
+	_, err = store.CreateQCRelationship(CreateQCRelationshipInput{QCBatchID: batch.ID, QCItemID: qcItem.ID, RelationshipType: QCRelationshipTypeBatchControl, RelatedSampleID: outsideSample.ID}, actor)
+	if err == nil {
+		t.Fatalf("expected relationship to reject related sample outside batch composition")
+	}
+}
+
+func TestQCRelationshipRejectsAnalysisRequestLineOutsideBatchComposition(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	actor := catalogTestActor()
+	client, method, service := createQCClientMethodAndService(t, store, actor)
+	batchSample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "QC batch", ClientSampleID: "BATCH-C-2", Matrix: "Water", AnalysisServiceIDs: []string{service.ID}}, actor)
+	if err != nil {
+		t.Fatalf("create batch sample: %v", err)
+	}
+	outsideSample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "QC batch", ClientSampleID: "OUTSIDE-C-2", Matrix: "Water", AnalysisServiceIDs: []string{service.ID}}, actor)
+	if err != nil {
+		t.Fatalf("create outside sample: %v", err)
+	}
+	outsideLines := store.AnalysisRequestLinesForSample(outsideSample.ID)
+	if len(outsideLines) != 1 {
+		t.Fatalf("expected outside sample analysis request line, got %d", len(outsideLines))
+	}
+	qcSample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "QC batch", ClientSampleID: "DUP-OUTSIDE", Matrix: "Water", AnalysisServiceIDs: []string{service.ID}}, actor)
+	if err != nil {
+		t.Fatalf("create qc sample: %v", err)
+	}
+	batch, err := store.CreateQCBatch(CreateQCBatchInput{Name: "Reject outside line", MethodID: method.ID, Matrix: "Water"}, actor)
+	if err != nil {
+		t.Fatalf("create batch: %v", err)
+	}
+	if _, err := store.AddQCItemToBatch(batch.ID, CreateQCItemInput{SampleID: batchSample.ID, Role: QCItemRoleClientSample}, actor); err != nil {
+		t.Fatalf("add batch sample item: %v", err)
+	}
+	qcItem, err := store.AddQCItemToBatch(batch.ID, CreateQCItemInput{SampleID: qcSample.ID, Role: QCItemRoleQCSample, QCSampleKind: QCSampleKindLabDuplicate}, actor)
+	if err != nil {
+		t.Fatalf("add QC item: %v", err)
+	}
+
+	_, err = store.CreateQCRelationship(CreateQCRelationshipInput{QCBatchID: batch.ID, QCItemID: qcItem.ID, RelationshipType: QCRelationshipTypeDuplicateOf, AnalysisRequestLineID: outsideLines[0].ID}, actor)
+	if err == nil {
+		t.Fatalf("expected relationship to reject analysis request line whose sample is outside batch composition")
+	}
+}
+
+func TestQCBatchTransitionRejectsPersistedOutOfCompositionRelationship(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	actor := catalogTestActor()
+	client, method, service := createQCClientMethodAndService(t, store, actor)
+	batchSample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "QC batch", ClientSampleID: "BATCH-C-3", Matrix: "Water", AnalysisServiceIDs: []string{service.ID}}, actor)
+	if err != nil {
+		t.Fatalf("create batch sample: %v", err)
+	}
+	outsideSample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "QC batch", ClientSampleID: "OUTSIDE-C-3", Matrix: "Water", AnalysisServiceIDs: []string{service.ID}}, actor)
+	if err != nil {
+		t.Fatalf("create outside sample: %v", err)
+	}
+	qcSample, err := store.CreateSample(CreateSampleInput{ClientID: client.ID, Project: "QC batch", ClientSampleID: "MB-LEGACY", Matrix: "Water", AnalysisServiceIDs: []string{service.ID}}, actor)
+	if err != nil {
+		t.Fatalf("create qc sample: %v", err)
+	}
+	batch, err := store.CreateQCBatch(CreateQCBatchInput{Name: "Legacy invalid relationship", MethodID: method.ID, Matrix: "Water"}, actor)
+	if err != nil {
+		t.Fatalf("create batch: %v", err)
+	}
+	if _, err := store.AddQCItemToBatch(batch.ID, CreateQCItemInput{SampleID: batchSample.ID, Role: QCItemRoleClientSample}, actor); err != nil {
+		t.Fatalf("add batch sample item: %v", err)
+	}
+	qcItem, err := store.AddQCItemToBatch(batch.ID, CreateQCItemInput{SampleID: qcSample.ID, Role: QCItemRoleQCSample, QCSampleKind: QCSampleKindMethodBlank}, actor)
+	if err != nil {
+		t.Fatalf("add QC item: %v", err)
+	}
+	if _, err := store.db.Exec(`INSERT INTO qc_relationships(id, tenant_id, lab_id, qc_batch_id, qc_item_id, relationship_type, related_sample_id, analysis_request_line_id, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "QCRL-LEGACY", DefaultTenantID, DefaultLabID, batch.ID, qcItem.ID, string(QCRelationshipTypeBatchControl), outsideSample.ID, "", "legacy invalid", "2026-06-22T00:00:00Z"); err != nil {
+		t.Fatalf("insert legacy invalid relationship: %v", err)
+	}
+
+	if _, err := store.TransitionQCBatch(batch.ID, QCBatchStatusInReview, "legacy relationship should not satisfy review", actor); err == nil {
+		t.Fatalf("expected transition to reject out-of-composition relationship")
+	}
+}
+
 func TestQCBatchStatusWorkflowRequiresReviewAndAuditsAcceptance(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
 	if err != nil {
@@ -113,6 +236,9 @@ func TestQCBatchStatusWorkflowRequiresReviewAndAuditsAcceptance(t *testing.T) {
 	batch, err := store.CreateQCBatch(CreateQCBatchInput{Name: "Acceptance batch", MethodID: method.ID, Matrix: "Water"}, actor)
 	if err != nil {
 		t.Fatalf("create batch: %v", err)
+	}
+	if _, err := store.AddQCItemToBatch(batch.ID, CreateQCItemInput{SampleID: clientSample.ID, Role: QCItemRoleClientSample}, actor); err != nil {
+		t.Fatalf("add client item: %v", err)
 	}
 	qcItem, err := store.AddQCItemToBatch(batch.ID, CreateQCItemInput{SampleID: qcSample.ID, Role: QCItemRoleQCSample, QCSampleKind: QCSampleKindMethodBlank}, actor)
 	if err != nil {
