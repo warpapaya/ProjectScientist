@@ -22,7 +22,7 @@ The fixture intentionally does not use real customer names, domains, addresses, 
 ## What is committed
 
 - Three synthetic clients, one per workflow family.
-- Three synthetic samples with matrices, containers, analysis lists, and custody event expectations.
+- Three synthetic samples with matrices, containers, preservation, received-condition, analysis lists, and custody event expectations.
 - Seven result-like analysis rows across field/wet chemistry/metals/microbiology-placeholder/narrative domains.
 - One QC batch expectation per workflow family.
 - One report/package expectation per workflow family.
@@ -39,6 +39,8 @@ The fixture intentionally does not use real customer names, domains, addresses, 
 - the fixture contains no forbidden customer-sensitive identifiers;
 - client rows can be transformed into current `ImportForScope` JSON client import rows;
 - client import creates three records and `ClientImportReconciliationReportForScope` reports a clean reconciliation;
+- sample/custody rows derived from the fixture import through `ImportForScope` with `ImportEntitySamples`, preserving client sample ids, lab ids, matrices, containers, preservation, received-condition, analysis expectations, and custody event reasons/sequences;
+- `SampleImportReconciliationReportForScope` emits clean hash-backed reconciliation and audit evidence for the imported synthetic sample/custody rows;
 - required SENAITE mapping keys are present;
 - parity gaps and migration checks are documented;
 - this document describes the dataset and parity gaps.
@@ -50,7 +52,7 @@ These are deliberate testable gaps, not failures of the fixture:
 | Gap | Severity | Meaning |
 | --- | --- | --- |
 | `gap-contact-role-import` | medium | Current generic import handles client name/email only; contact/report-recipient roles are not migrated yet. |
-| `gap-sample-custody-import` | high | Sample matrix/container/preservation/custody rows are fixture expectations only until sample migration exists. |
+| `gap-sample-custody-import` | remediated for lab-test fixture import | Synthetic sample matrix/container/preservation/received-condition/custody expectations now import and reconcile locally; this is not production/customer migration approval. |
 | `gap-analysis-result-import` | high | Analysis services, result values, qualifiers, and method snapshots are not migrated by `ImportForScope` yet. |
 | `gap-qc-batch-model` | high | QC batch expectations exist, but production-grade QC evaluation is not implemented. |
 | `gap-report-package-artifacts` | high | COA/EDD/narrative/custody/manifest artifacts are not generated from migrated data yet. |
