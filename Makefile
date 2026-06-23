@@ -1,4 +1,4 @@
-.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke backup-restore-proof image-review dev-up dev-down dev-clean-projects dev-clean-by-name dev-reset dev-seed demo-reset
+.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke backup-restore-proof image-review dev-up dev-down dev-clean-projects dev-clean-by-name dev-reset dev-seed demo-reset mvp-vertical-slice
 
 WORKTREE_SLUG ?= $(shell basename "$$(pwd)" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]_.-' '-' | sed 's/^-//;s/-$$//')
 COMPOSE_PROJECT_NAME ?= project-scientist-$(WORKTREE_SLUG)
@@ -54,6 +54,7 @@ docker-smoke:
 			-d attachment_media_type=application/json \
 			--data-urlencode attachment_content_text='synthetic COC smoke attachment' \
 			$(SMOKE_BASE_URL)/api/samples/S-000001/coc-package | grep -q '"content_hash":"sha256:'; \
+		$(COMPOSE_SMOKE_RUN) exec -T project-scientist /app/project-scientist mvp vertical-slice --db /data/project-scientist-mvp.db | grep -q 'mvp vertical-slice ok'; \
 		printf 'docker smoke ok\n'
 
 backup-restore-proof:
@@ -91,5 +92,8 @@ dev-reset:
 
 dev-seed:
 	@./scripts/dev-seed.sh $(DEV_BASE_URL)
+
+mvp-vertical-slice:
+	@go run ./cmd/project-scientist mvp vertical-slice --db "$${PSC_MVP_DB:-data/project-scientist-mvp.db}"
 
 demo-reset: dev-up dev-seed
