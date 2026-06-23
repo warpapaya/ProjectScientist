@@ -87,10 +87,14 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return backupDB(args[2:], stdout, stderr)
 	case "restore":
 		return restoreDB(args[2:], stdout, stderr)
+	case "mvp":
+		if len(args) >= 3 && args[2] == "vertical-slice" {
+			return mvpVerticalSlice(args[3:], stdout, stderr)
+		}
 	case "smoke":
 		return smokeHTTP(args[2:], stdout, stderr)
 	}
-	return fmt.Errorf("unknown command; supported: serve, audit verify, db migrate, db status, seed, reset, backup, restore, smoke")
+	return fmt.Errorf("unknown command; supported: serve, audit verify, db migrate, db status, seed, reset, backup, restore, mvp vertical-slice, smoke")
 }
 
 func serve() error {
@@ -365,6 +369,26 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+func mvpVerticalSlice(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("mvp vertical-slice", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dbPath := fs.String("db", defaultDBPath(), "SQLite database path")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	store, err := lab.OpenSQLiteStore(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	summary, err := store.RunMVPVerticalSlice(lab.MVPVerticalSliceInput{}, cliActor("psc-mvp-operator", lab.RoleAdmin, lab.RoleLabManager))
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "mvp vertical-slice ok db=%s sample=%s worksheet=%s report_artifact=%s denied_controls=%d\n", *dbPath, summary.Sample.ID, summary.Worksheet.ID, summary.Report.Artifact.ID, len(summary.DeniedControls))
+	return nil
 }
 
 func smokeHTTP(args []string, stdout, stderr io.Writer) error {
