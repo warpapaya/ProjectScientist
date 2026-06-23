@@ -558,6 +558,10 @@ func (a *app) index(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scope := scopeFromRequest(r)
+	if !httpActorCanReadScope(r, scope) {
+		http.Error(w, "request scope is not bound to authenticated actor", http.StatusForbidden)
+		return
+	}
 	if err := a.tmpl.Execute(w, a.pageData(scope, 20, actor(r))); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -565,6 +569,10 @@ func (a *app) index(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) apiState(w http.ResponseWriter, r *http.Request) {
 	scope := scopeFromRequest(r)
+	if !httpActorCanReadScope(r, scope) {
+		http.Error(w, "request scope is not bound to authenticated actor", http.StatusForbidden)
+		return
+	}
 	writeJSON(w, a.pageData(scope, 50, actor(r)), http.StatusOK)
 }
 
@@ -1459,7 +1467,20 @@ func scopeFromRequest(r *http.Request) lab.Scope {
 	} else if labID := strings.TrimSpace(r.URL.Query().Get("lab_id")); labID != "" {
 		scope.LabID = labID
 	}
+	if scope.LabID != lab.DefaultLabID {
+		return lab.Scope{TenantID: "unauthorized-request-scope", LabID: scope.LabID}
+	}
 	return scope
+}
+
+func httpActorCanReadScope(r *http.Request, scope lab.Scope) bool {
+	readActor := actor(r)
+	for _, membership := range readActor.TenantMemberships {
+		if membership.TenantID == scope.TenantID && strings.TrimSpace(scope.LabID) == lab.DefaultLabID {
+			return true
+		}
+	}
+	return false
 }
 
 func scopedHome(scope lab.Scope) string {
