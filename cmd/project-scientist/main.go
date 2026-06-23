@@ -35,6 +35,9 @@ type app struct {
 type pageData struct {
 	Scope                       lab.Scope
 	CSRFToken                   string
+	ActivePage                  string
+	PageTitle                   string
+	PageDescription             string
 	Clients                     []lab.Client
 	Sites                       []lab.Site
 	Contacts                    []lab.Contact
@@ -561,7 +564,12 @@ func defaultDBPath() string {
 }
 
 func (a *app) index(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" || r.Method != http.MethodGet {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+	activePage, title, description, ok := productionPageForPath(r.URL.Path)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
@@ -569,8 +577,33 @@ func (a *app) index(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := a.tmpl.Execute(w, a.pageData(scope, 20, actor)); err != nil {
+	data := a.pageData(scope, 20, actor)
+	data.ActivePage = activePage
+	data.PageTitle = title
+	data.PageDescription = description
+	if err := a.tmpl.Execute(w, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func productionPageForPath(path string) (activePage string, title string, description string, ok bool) {
+	switch path {
+	case "/":
+		return "all", "Lab operations cockpit", "Run samples from intake to release without losing the audit trail.", true
+	case "/dashboard":
+		return "dashboard", "Dashboard", "Operational overview for today’s lab work.", true
+	case "/samples":
+		return "samples", "Samples", "Receive samples, track custody, and move work through legal workflow transitions.", true
+	case "/results":
+		return "results", "Results", "Build worksheets, enter results, and run technical review without mixing setup screens into the workbench.", true
+	case "/reports":
+		return "reports", "Reports", "Review blockers, preview COAs, release reports, and download custody packages.", true
+	case "/admin":
+		return "admin", "Administration", "Maintain clients, contacts, catalog, and controlled vocabulary away from the daily operations flow.", true
+	case "/audit":
+		return "audit", "Audit trail", "Inspect immutable workflow events and evidence hashes.", true
+	default:
+		return "", "", "", false
 	}
 }
 
