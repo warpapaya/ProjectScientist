@@ -20,7 +20,7 @@ func TestAdminConfigIndexRendersLowClickWorkbench(t *testing.T) {
 	defer store.Close()
 	application := &app{store: store, tmpl: template.Must(template.ParseFiles("../../web/templates/index.html"))}
 
-	req := httptest.NewRequest(http.MethodGet, "/?tenant_id=tenant-alpha&lab_id=water-lab", nil)
+	req := httptest.NewRequest(http.MethodGet, "/?tenant_id="+lab.DefaultTenantID+"&lab_id="+lab.DefaultLabID, nil)
 	rec := httptest.NewRecorder()
 	application.index(rec, req)
 	if rec.Code != http.StatusOK {
