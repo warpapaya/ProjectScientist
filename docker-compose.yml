@@ -16,7 +16,7 @@ services:
       PSC_INTERNAL_SESSION_TOKEN: "${PSC_INTERNAL_SESSION_TOKEN:-psc-local-dev-session-token}"
       PSC_INTERNAL_SESSION_USER: "${PSC_INTERNAL_SESSION_USER:-lab-dev}"
       PSC_INTERNAL_SESSION_PASSWORD: "${PSC_INTERNAL_SESSION_PASSWORD:-project-scientist-dev}"
-      PSC_ENABLE_DEMO_RESET: "${PSC_ENABLE_DEMO_RESET:-false}"
+      PSC_ENABLE_DEMO_RESET: "${PSC_ENABLE_DEMO_RESET:-true}"
       PSC_SYNTHETIC_FIXTURE_PATH: "/app/fixtures/mvp_synthetic_lab.json"
     volumes:
       - project-scientist-data:/data

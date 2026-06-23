@@ -38,6 +38,7 @@ type pageData struct {
 	ActivePage                  string
 	PageTitle                   string
 	PageDescription             string
+	DemoResetEnabled            bool
 	Clients                     []lab.Client
 	Sites                       []lab.Site
 	Contacts                    []lab.Contact
@@ -624,6 +625,7 @@ func (a *app) pageData(scope lab.Scope, auditLimit int, actor lab.ActorContext) 
 	return pageData{
 		Scope:                       scope,
 		CSRFToken:                   a.csrfTokenForRequest(scope, actor),
+		DemoResetEnabled:            a.demoResetEnabled,
 		Clients:                     a.store.ClientsForScope(scope),
 		Sites:                       a.store.SitesForScope(scope),
 		Contacts:                    a.store.ContactsForScope(scope),
@@ -679,7 +681,11 @@ func (a *app) demoReset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, summary, http.StatusOK)
+	if wantsJSON(r) {
+		writeJSON(w, summary, http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 
 func (a *app) createClient(w http.ResponseWriter, r *http.Request) {
