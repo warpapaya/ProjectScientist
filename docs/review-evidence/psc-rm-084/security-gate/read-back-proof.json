@@ -1,0 +1,39 @@
+{
+  "generated_utc": "2026-06-23T05:34:11Z",
+  "task": "t_7f23eca4",
+  "branch": "psc-rm-084-pilot-readiness",
+  "repo_root": "/Users/citadel/.hermes/kanban/boards/project-scientist/workspaces/t_9ea38999/project-scientist-pilot-readiness",
+  "verdict_preserved": "CHANGES_REQUESTED / BLOCKED for any private/external staging",
+  "non_actions": [
+    "no deployment",
+    "no production/customer mutation",
+    "no customer data",
+    "no external exposure",
+    "no DNS/auth/security/billing changes",
+    "no customer-facing claims",
+    "no production-readiness claims"
+  ],
+  "read_back": [
+    {
+      "path": "docs/review-evidence/psc-rm-084/security-gate/aegis-pre-staging-security-gate-psc-rm-084.md",
+      "bytes": 6426,
+      "lines": 97,
+      "sha256": "8e8088e2166c915820660b05b4b70cb47f5d208d74d0bafda022a8a352109b30",
+      "exists": true
+    },
+    {
+      "path": "docs/review-evidence/psc-rm-084/security-gate/psc-rm-084-private-staging-runbook-blocked.md",
+      "bytes": 4172,
+      "lines": 92,
+      "sha256": "def7690384766bca96889e93b5f70c56af5e50e549ba93d21a98772f7ce78f1f",
+      "exists": true
+    },
+    {
+      "path": "docs/review-evidence/psc-rm-084/security-gate/SHA256SUMS",
+      "bytes": 316,
+      "lines": 2,
+      "sha256": "2ac28fa02d2be82ec0d894212f686de0cd0d6588598b211e335cbbc4a1e3d6c9",
+      "exists": true
+    }
+  ]
+}
