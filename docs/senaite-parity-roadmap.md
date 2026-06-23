@@ -133,6 +133,7 @@ Needed:
 - Backup/restore test harness (`./scripts/backup-restore-proof.sh`; details in `docs/backup-restore-proof.md`).
 - Audit verification on startup and as an operator command/proof step.
 - Seed/demo data and smoke suite.
+  - Lab-test v1: `./scripts/performance-concurrency-smoke.sh --json` / `make performance-concurrency-smoke` exercises synthetic concurrent sample mutations, result entry/review, audit writes, and COA report artifact generation with explicit local limits/observations.
 - CI: tests, lint, build, container health.
 - Deployment runbook, rollback plan, observability/logging.
 - Security review gate before any externally reachable staging.

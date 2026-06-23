@@ -92,9 +92,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 			return mvpVerticalSlice(args[3:], stdout, stderr)
 		}
 	case "smoke":
+		if len(args) >= 3 && args[2] == "performance" {
+			return smokePerformance(args[3:], stdout, stderr)
+		}
 		return smokeHTTP(args[2:], stdout, stderr)
 	}
-	return fmt.Errorf("unknown command; supported: serve, audit verify, db migrate, db status, seed, reset, backup, restore, mvp vertical-slice, smoke")
+	return fmt.Errorf("unknown command; supported: serve, audit verify, db migrate, db status, seed, reset, backup, restore, mvp vertical-slice, smoke, smoke performance")
 }
 
 func serve() error {

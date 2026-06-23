@@ -1,4 +1,4 @@
-.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke backup-restore-proof image-review dev-up dev-down dev-clean-projects dev-clean-by-name dev-reset dev-seed demo-reset mvp-vertical-slice
+.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke performance-concurrency-smoke backup-restore-proof image-review dev-up dev-down dev-clean-projects dev-clean-by-name dev-reset dev-seed demo-reset mvp-vertical-slice
 
 WORKTREE_SLUG ?= $(shell basename "$$(pwd)" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]_.-' '-' | sed 's/^-//;s/-$$//')
 COMPOSE_PROJECT_NAME ?= project-scientist-$(WORKTREE_SLUG)
@@ -56,6 +56,9 @@ docker-smoke:
 			$(SMOKE_BASE_URL)/api/samples/S-000001/coc-package | grep -q '"content_hash":"sha256:'; \
 		$(COMPOSE_SMOKE_RUN) exec -T project-scientist /app/project-scientist mvp vertical-slice --db /data/project-scientist-mvp.db | grep -q 'mvp vertical-slice ok'; \
 		printf 'docker smoke ok\n'
+
+performance-concurrency-smoke:
+	@./scripts/performance-concurrency-smoke.sh --json
 
 backup-restore-proof:
 	@./scripts/backup-restore-proof.sh
