@@ -651,7 +651,34 @@ var sqliteMigrations = []string{
 		created_at TEXT NOT NULL,
 		PRIMARY KEY(superseded_snapshot_id, superseding_snapshot_id)
 	);`,
-	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_worksheet', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('next_analysis_request_line', '1'), ('next_sample_intake_template', '1'), ('next_qc_sample_relationship', '1'), ('next_custody_event', '1'), ('next_qc_batch', '1'), ('next_qc_item', '1'), ('next_qc_relationship', '1'), ('next_qc_limit_rule', '1'), ('next_result', '1'), ('next_report_snapshot', '1'), ('next_report_artifact', '1'), ('last_hash', '');`,
+	`CREATE TABLE IF NOT EXISTS coc_packages (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		sample_id TEXT NOT NULL REFERENCES samples(id),
+		package_format TEXT NOT NULL CHECK (length(trim(package_format)) > 0),
+		content_hash TEXT NOT NULL,
+		content_blob BLOB NOT NULL,
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TRIGGER IF NOT EXISTS coc_packages_immutable_update BEFORE UPDATE ON coc_packages BEGIN SELECT RAISE(ABORT, 'COC package is immutable'); END;`,
+	`CREATE TRIGGER IF NOT EXISTS coc_packages_immutable_delete BEFORE DELETE ON coc_packages BEGIN SELECT RAISE(ABORT, 'COC package is immutable'); END;`,
+	`CREATE TABLE IF NOT EXISTS report_package_attachments (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		package_id TEXT NOT NULL REFERENCES coc_packages(id),
+		name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+		media_type TEXT NOT NULL CHECK (length(trim(media_type)) > 0),
+		content_hash TEXT NOT NULL,
+		content_blob BLOB NOT NULL,
+		source_artifact_id TEXT NOT NULL DEFAULT '',
+		sort_order INTEGER NOT NULL,
+		created_at TEXT NOT NULL
+	);`,
+	`CREATE TRIGGER IF NOT EXISTS report_package_attachments_immutable_update BEFORE UPDATE ON report_package_attachments BEGIN SELECT RAISE(ABORT, 'report package attachment is immutable'); END;`,
+	`CREATE TRIGGER IF NOT EXISTS report_package_attachments_immutable_delete BEFORE DELETE ON report_package_attachments BEGIN SELECT RAISE(ABORT, 'report package attachment is immutable'); END;`,
+	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_worksheet', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('next_analysis_request_line', '1'), ('next_sample_intake_template', '1'), ('next_qc_sample_relationship', '1'), ('next_custody_event', '1'), ('next_qc_batch', '1'), ('next_qc_item', '1'), ('next_qc_relationship', '1'), ('next_qc_limit_rule', '1'), ('next_result', '1'), ('next_report_snapshot', '1'), ('next_report_artifact', '1'), ('next_coc_package', '1'), ('next_report_package_attachment', '1'), ('last_hash', '');`,
 	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (9, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
 }
 
@@ -691,6 +718,8 @@ var sqlitePostMigrationIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_report_snapshots_scope_sample ON report_snapshots(tenant_id, lab_id, sample_id, released_at);`,
 	`CREATE INDEX IF NOT EXISTS idx_report_artifacts_scope_sample ON report_artifacts(tenant_id, lab_id, sample_id, created_at);`,
 	`CREATE INDEX IF NOT EXISTS idx_report_supersessions_superseding ON report_supersessions(superseding_snapshot_id);`,
+	`CREATE INDEX IF NOT EXISTS idx_coc_packages_scope_sample ON coc_packages(tenant_id, lab_id, sample_id, created_at);`,
+	`CREATE INDEX IF NOT EXISTS idx_report_package_attachments_package ON report_package_attachments(tenant_id, lab_id, package_id, sort_order);`,
 }
 
 func OpenStore(statePath, _ string) (*Store, error) { return OpenSQLiteStore(statePath) }

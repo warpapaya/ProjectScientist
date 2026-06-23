@@ -240,7 +240,7 @@ Goal: produce defensible artifacts, not just screen data.
 Tasks:
 - ReportSnapshot/ReportArtifact model.
 - COA renderer/template system.
-- COC package generation and attachment handling.
+- COC package generation and attachment handling. Implemented for lab-test synthetic data as immutable content-hashed COC packages with attachment manifests and audit events.
 - Report release and amendment workflow.
 - Label print artifacts.
 

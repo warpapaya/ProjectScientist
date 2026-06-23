@@ -47,6 +47,13 @@ docker-smoke:
 		./scripts/dev-seed.sh $(SMOKE_BASE_URL); \
 		curl -fsS $(SMOKE_BASE_URL)/api/state | grep -q 'Okefenokee Synthetic Water Authority'; \
 		curl -fsS $(SMOKE_BASE_URL)/api/state | grep -q 'S-000001'; \
+		curl -fsS -H 'Accept: application/json' -X POST \
+			-d tenant_id=lab-test -d lab_id=default-lab \
+			-d package_format=application/vnd.project-scientist.coc+json \
+			-d attachment_name=custody-history.json \
+			-d attachment_media_type=application/json \
+			--data-urlencode attachment_content_text='synthetic COC smoke attachment' \
+			$(SMOKE_BASE_URL)/api/samples/S-000001/coc-package | grep -q '"content_hash":"sha256:'; \
 		printf 'docker smoke ok\n'
 
 backup-restore-proof:

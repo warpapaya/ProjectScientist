@@ -79,6 +79,9 @@ func TestResetAndSeedSyntheticDemoIsDeterministicAndFixtureBacked(t *testing.T) 
 	if len(samples[0].Analyses) != 4 {
 		t.Fatalf("expected fixture analytes to expand to four analyses, got %#v", samples[0].Analyses)
 	}
+	if len(samples[0].CustodyEvents) != 1 || samples[0].CustodyEvents[0].Type != CustodyReceived || samples[0].CustodyEvents[0].Location == "" {
+		t.Fatalf("expected demo reset to seed synthetic receipt custody history, got %#v", samples[0].CustodyEvents)
+	}
 	if first.SampleReferenceCount == 0 || second.SampleReferenceCount != first.SampleReferenceCount {
 		t.Fatalf("demo reset should seed stable sample reference vocabulary counts, first=%#v second=%#v", first, second)
 	}
