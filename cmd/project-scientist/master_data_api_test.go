@@ -19,7 +19,7 @@ func TestMasterDataAPICreateAndListState(t *testing.T) {
 	defer store.Close()
 	app := &app{store: store}
 
-	clientResp := performForm(t, app.createClient, "/api/clients", url.Values{"name": {"Alpha Environmental"}, "email": {"lab@example.test"}}, "tenant-alpha", "water-lab")
+	clientResp := performForm(t, app.createClient, "/api/clients", url.Values{"name": {"Alpha Environmental"}, "email": {"lab@example.test"}}, lab.DefaultTenantID, "water-lab")
 	if clientResp.Code != http.StatusCreated {
 		t.Fatalf("create client status = %d body=%s", clientResp.Code, clientResp.Body.String())
 	}
@@ -28,11 +28,11 @@ func TestMasterDataAPICreateAndListState(t *testing.T) {
 		t.Fatalf("decode client: %v", err)
 	}
 
-	defaultsResp := performForm(t, app.upsertClientDefaults, "/api/client-defaults", url.Values{"client_id": {client.ID}, "report_template": {"alpha-coa"}, "invoice_email": {"billing@example.test"}, "default_matrix": {"Water"}, "default_tests": {"pH, Turbidity"}}, "tenant-alpha", "water-lab")
+	defaultsResp := performForm(t, app.upsertClientDefaults, "/api/client-defaults", url.Values{"client_id": {client.ID}, "report_template": {"alpha-coa"}, "invoice_email": {"billing@example.test"}, "default_matrix": {"Water"}, "default_tests": {"pH, Turbidity"}}, lab.DefaultTenantID, "water-lab")
 	if defaultsResp.Code != http.StatusCreated {
 		t.Fatalf("upsert defaults status = %d body=%s", defaultsResp.Code, defaultsResp.Body.String())
 	}
-	siteResp := performForm(t, app.createSite, "/api/sites", url.Values{"client_id": {client.ID}, "name": {"North Plant"}, "division": {"Water"}, "address": {"101 Intake Rd"}}, "tenant-alpha", "water-lab")
+	siteResp := performForm(t, app.createSite, "/api/sites", url.Values{"client_id": {client.ID}, "name": {"North Plant"}, "division": {"Water"}, "address": {"101 Intake Rd"}}, lab.DefaultTenantID, "water-lab")
 	if siteResp.Code != http.StatusCreated {
 		t.Fatalf("create site status = %d body=%s", siteResp.Code, siteResp.Body.String())
 	}
@@ -40,7 +40,7 @@ func TestMasterDataAPICreateAndListState(t *testing.T) {
 	if err := json.Unmarshal(siteResp.Body.Bytes(), &site); err != nil {
 		t.Fatalf("decode site: %v", err)
 	}
-	contactResp := performForm(t, app.createContact, "/api/contacts", url.Values{"client_id": {client.ID}, "site_id": {site.ID}, "name": {"Avery Chemist"}, "email": {"avery@example.test"}, "phone": {"555-0100"}}, "tenant-alpha", "water-lab")
+	contactResp := performForm(t, app.createContact, "/api/contacts", url.Values{"client_id": {client.ID}, "site_id": {site.ID}, "name": {"Avery Chemist"}, "email": {"avery@example.test"}, "phone": {"555-0100"}}, lab.DefaultTenantID, "water-lab")
 	if contactResp.Code != http.StatusCreated {
 		t.Fatalf("create contact status = %d body=%s", contactResp.Code, contactResp.Body.String())
 	}
@@ -48,16 +48,16 @@ func TestMasterDataAPICreateAndListState(t *testing.T) {
 	if err := json.Unmarshal(contactResp.Body.Bytes(), &contact); err != nil {
 		t.Fatalf("decode contact: %v", err)
 	}
-	roleResp := performForm(t, app.assignContactRole, "/api/contact-roles", url.Values{"contact_id": {contact.ID}, "role": {"report_reviewer"}}, "tenant-alpha", "water-lab")
+	roleResp := performForm(t, app.assignContactRole, "/api/contact-roles", url.Values{"contact_id": {contact.ID}, "role": {"report_reviewer"}}, lab.DefaultTenantID, "water-lab")
 	if roleResp.Code != http.StatusCreated {
 		t.Fatalf("assign role status = %d body=%s", roleResp.Code, roleResp.Body.String())
 	}
-	projectResp := performForm(t, app.createProject, "/api/projects", url.Values{"client_id": {client.ID}, "site_id": {site.ID}, "name": {"Q3 Compliance"}, "work_order": {"WO-2026-001"}, "default_matrix": {"Water"}, "default_tests": {"pH"}}, "tenant-alpha", "water-lab")
+	projectResp := performForm(t, app.createProject, "/api/projects", url.Values{"client_id": {client.ID}, "site_id": {site.ID}, "name": {"Q3 Compliance"}, "work_order": {"WO-2026-001"}, "default_matrix": {"Water"}, "default_tests": {"pH"}}, lab.DefaultTenantID, "water-lab")
 	if projectResp.Code != http.StatusCreated {
 		t.Fatalf("create project status = %d body=%s", projectResp.Code, projectResp.Body.String())
 	}
 
-	alphaState := performGet(t, app.apiState, "/api/state", "tenant-alpha", "water-lab")
+	alphaState := performGet(t, app.apiState, "/api/state", lab.DefaultTenantID, "water-lab")
 	var alpha pageData
 	if err := json.Unmarshal(alphaState.Body.Bytes(), &alpha); err != nil {
 		t.Fatalf("decode alpha state: %v", err)

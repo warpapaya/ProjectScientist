@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -50,6 +51,105 @@ func TestCreateClientIgnoresSpoofedActorHeaderAndFormForAuditIdentity(t *testing
 	}
 	if events[0].ActorContext.UserID != "lab-dev" || events[0].ActorContext.RequestID != "req-spoof" {
 		t.Fatalf("expected dev actor context with request id, got %#v", events[0].ActorContext)
+	}
+}
+
+func TestCreateClientRejectsArbitraryTenantSelectionWithoutTrustedMembership(t *testing.T) {
+	cases := []struct {
+		name     string
+		path     string
+		tenantID string
+		mutate   func(*http.Request, url.Values)
+	}{
+		{
+			name:     "header tenant",
+			path:     "/api/clients",
+			tenantID: "tenant-header-attacker",
+			mutate: func(req *http.Request, form url.Values) {
+				req.Header.Set("X-PSC-Tenant-ID", "tenant-header-attacker")
+			},
+		},
+		{
+			name:     "form tenant",
+			path:     "/api/clients",
+			tenantID: "tenant-form-attacker",
+			mutate: func(req *http.Request, form url.Values) {
+				form.Set("tenant_id", "tenant-form-attacker")
+			},
+		},
+		{
+			name:     "query tenant",
+			path:     "/api/clients?tenant_id=tenant-query-attacker",
+			tenantID: "tenant-query-attacker",
+			mutate:   func(req *http.Request, form url.Values) {},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+			if err != nil {
+				t.Fatalf("open store: %v", err)
+			}
+			defer store.Close()
+			app := &app{store: store}
+
+			form := url.Values{}
+			form.Set("name", "Boundary Test Lab")
+			form.Set("email", "boundary@example.test")
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(form.Encode()))
+			tc.mutate(req, form)
+			req.Body = io.NopCloser(strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Accept", "application/json")
+			req.Header.Set("X-PSC-Request-ID", "req-tenant-boundary")
+			rr := httptest.NewRecorder()
+
+			app.createClient(rr, req)
+			if rr.Code != http.StatusForbidden {
+				t.Fatalf("expected 403 for arbitrary %s, got %d body=%s", tc.name, rr.Code, rr.Body.String())
+			}
+			if got := len(store.Clients()); got != 0 {
+				t.Fatalf("expected denied mutation to create no clients, got %d", got)
+			}
+			events, err := store.AuditEvents(0)
+			if err != nil {
+				t.Fatalf("audit events: %v", err)
+			}
+			if len(events) != 1 {
+				t.Fatalf("expected one denied audit event, got %d", len(events))
+			}
+			if events[0].TenantID != tc.tenantID || events[0].Outcome != lab.AuditOutcomeDenied || events[0].ActorContext.UserID != "lab-dev" {
+				t.Fatalf("expected denied audit scoped to selected tenant with trusted local actor, got %#v", events[0])
+			}
+		})
+	}
+}
+
+func TestCreateClientAllowsTrustedLocalLabTestTenant(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app := &app{store: store}
+
+	form := url.Values{}
+	form.Set("name", "Lab Test Client")
+	form.Set("email", "lab-test@example.test")
+	form.Set("tenant_id", "lab-test")
+	req := httptest.NewRequest(http.MethodPost, "/api/clients", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	rr := httptest.NewRecorder()
+
+	app.createClient(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected lab-test local tenant to remain usable, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	clients := store.Clients()
+	if len(clients) != 1 || clients[0].TenantID != "lab-test" {
+		t.Fatalf("expected client in lab-test tenant, got %#v", clients)
 	}
 }
 
