@@ -1116,7 +1116,12 @@ func (a *app) reportArtifactDownload(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	artifact, ok := a.store.ReportArtifactForScope(scopeFromRequest(r), id)
+	scope := scopeFromRequest(r)
+	if !httpActorCanReadScope(r, scope) {
+		http.Error(w, "request scope is not bound to authenticated actor", http.StatusForbidden)
+		return
+	}
+	artifact, ok := a.store.ReportArtifactForScope(scope, id)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -1136,7 +1141,12 @@ func (a *app) cocPackageDownload(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	pkg, ok := a.store.COCPackageForScope(scopeFromRequest(r), id)
+	scope := scopeFromRequest(r)
+	if !httpActorCanReadScope(r, scope) {
+		http.Error(w, "request scope is not bound to authenticated actor", http.StatusForbidden)
+		return
+	}
+	pkg, ok := a.store.COCPackageForScope(scope, id)
 	if !ok {
 		http.NotFound(w, r)
 		return
