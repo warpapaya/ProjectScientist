@@ -65,6 +65,8 @@
       "family_id": "precast-industrial",
       "client_sample_id": "PI-WW-2026-0001",
       "matrix": "industrial wastewater",
+      "preservation": "mixed preserved and unpreserved containers",
+      "received_condition": "acceptable",
       "containers": ["500 mL HDPE preserved", "250 mL HDPE unpreserved", "wide-mouth solids jar"],
       "analyses": ["pH", "Total Suspended Solids", "Alkalinity", "Lead"],
       "custody_events": ["received", "split-for-metals", "worksheet-assigned", "reviewed", "reported"]
@@ -75,6 +77,8 @@
       "family_id": "municipal-water",
       "client_sample_id": "MW-DW-2026-0001",
       "matrix": "drinking water",
+      "preservation": "received chilled with preserved chemistry containers",
+      "received_condition": "acceptable",
       "containers": ["sterile 120 mL bottle", "250 mL amber", "500 mL HDPE preserved"],
       "analyses": ["pH", "Nitrate as N", "Total Coliform", "Copper"],
       "custody_events": ["received-chilled", "microbiology-hold-started", "worksheet-assigned", "reviewed", "edd-exported"]
@@ -85,6 +89,8 @@
       "family_id": "materials-forensics",
       "client_sample_id": "MF-BULK-2026-0001",
       "matrix": "bulk material",
+      "preservation": "sealed dry ambient custody",
+      "received_condition": "acceptable",
       "containers": ["sealed bulk bag", "filter cassette"],
       "analyses": ["Gravimetric Dust", "Microscopy Screen", "Lead", "Narrative Review"],
       "custody_events": ["received", "subsampled", "microscopy-reviewed", "narrative-approved", "reported"]

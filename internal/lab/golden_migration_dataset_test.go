@@ -38,14 +38,16 @@ type goldenClient struct {
 }
 
 type goldenSample struct {
-	LegacyID       string   `json:"legacy_id"`
-	ClientLegacyID string   `json:"client_legacy_id"`
-	FamilyID       string   `json:"family_id"`
-	ClientSampleID string   `json:"client_sample_id"`
-	Matrix         string   `json:"matrix"`
-	Containers     []string `json:"containers"`
-	Analyses       []string `json:"analyses"`
-	CustodyEvents  []string `json:"custody_events"`
+	LegacyID          string   `json:"legacy_id"`
+	ClientLegacyID    string   `json:"client_legacy_id"`
+	FamilyID          string   `json:"family_id"`
+	ClientSampleID    string   `json:"client_sample_id"`
+	Matrix            string   `json:"matrix"`
+	Preservation      string   `json:"preservation"`
+	ReceivedCondition string   `json:"received_condition"`
+	Containers        []string `json:"containers"`
+	Analyses          []string `json:"analyses"`
+	CustodyEvents     []string `json:"custody_events"`
 }
 
 type goldenAnalysis struct {

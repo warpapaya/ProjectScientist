@@ -27,6 +27,7 @@ const (
 
 const ImportEntityClients = "clients"
 const ImportEntityAnalysisResults = "analysis_results"
+const ImportEntitySamples = "samples"
 
 const (
 	ReconciliationActionCreate = "create"
@@ -143,13 +144,22 @@ func (s *Store) ImportForScope(scope Scope, payload []byte, opts ImportOptions, 
 			if result.Rows[i].Action == ReconciliationActionSkip {
 				continue
 			}
-			client, err := insertImportedClientTx(tx, scope, rows[i])
-			if err != nil {
-				return err
-			}
-			result.Rows[i].ID = client.ID
-			if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "client.imported", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "client", ID: client.ID}, Details: map[string]any{"source": opts.Source, "row": i + 1, "legacy_id": rows[i]["legacy_id"], "name": client.Name}}); err != nil {
-				return err
+			switch opts.Entity {
+			case ImportEntityClients:
+				client, err := insertImportedClientTx(tx, scope, rows[i])
+				if err != nil {
+					return err
+				}
+				result.Rows[i].ID = client.ID
+				if err := appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "client.imported", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "client", ID: client.ID}, Details: map[string]any{"source": opts.Source, "row": i + 1, "legacy_id": rows[i]["legacy_id"], "name": client.Name}}); err != nil {
+					return err
+				}
+			case ImportEntitySamples:
+				sample, err := insertImportedSampleTx(tx, scope, rows[i], actor, opts.Source, i+1)
+				if err != nil {
+					return err
+				}
+				result.Rows[i].ID = sample.ID
 			}
 		}
 		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "import.completed", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "import", ID: opts.Source}, Details: map[string]any{"entity": opts.Entity, "format": string(opts.Format), "source": opts.Source, "total_rows": result.TotalRows, "created_rows": result.CreatedRows, "skipped_rows": result.SkippedRows}})
@@ -173,8 +183,26 @@ func (s *Store) ExportForScope(scope Scope, opts ExportOptions) ([]byte, error) 
 	if entity == "" {
 		entity = ImportEntityClients
 	}
-	if entity != ImportEntityClients {
+	if entity != ImportEntityClients && entity != ImportEntitySamples {
 		return nil, fmt.Errorf("unsupported export entity %q", entity)
+	}
+	if entity == ImportEntitySamples {
+		samples := s.SamplesForScope(scope)
+		rows := make([]ImportRow, 0, len(samples))
+		for _, sample := range samples {
+			rows = append(rows, sampleExportRow(sample))
+		}
+		headers := []string{"id", "client_id", "client_sample_id", "lab_sample_id", "matrix", "container_count", "custody_event_count", "tenant_id", "lab_id"}
+		switch format {
+		case ImportFormatCSV:
+			return encodeRowsCSV(rows, headers)
+		case ImportFormatJSON:
+			return json.MarshalIndent(rows, "", "  ")
+		case ImportFormatXLSX:
+			return EncodeRowsXLSX(rows, headers)
+		default:
+			return nil, fmt.Errorf("unsupported export format %q", format)
+		}
 	}
 	clients := s.ClientsForScope(scope)
 	rows := make([]ImportRow, 0, len(clients))
@@ -273,6 +301,8 @@ func validateImportRows(entity string, rows []ImportRow) []ImportValidationError
 	switch entity {
 	case ImportEntityClients:
 		return validateClientImportRows(rows)
+	case ImportEntitySamples:
+		return validateSampleImportRows(rows)
 	case ImportEntityAnalysisResults:
 		return validateAnalysisResultImportRows(rows)
 	default:
@@ -286,6 +316,19 @@ func validateClientImportRows(rows []ImportRow) []ImportValidationError {
 		rowNum := i + 1
 		if strings.TrimSpace(row["name"]) == "" {
 			out = append(out, ImportValidationError{Row: rowNum, Field: "name", Message: "name is required"})
+		}
+	}
+	return out
+}
+
+func validateSampleImportRows(rows []ImportRow) []ImportValidationError {
+	out := []ImportValidationError{}
+	for i, row := range rows {
+		rowNum := i + 1
+		for _, field := range []string{"client_id", "client_sample_id", "lab_sample_id", "matrix"} {
+			if strings.TrimSpace(row[field]) == "" {
+				out = append(out, ImportValidationError{Row: rowNum, Field: field, Message: field + " is required"})
+			}
 		}
 	}
 	return out
