@@ -117,7 +117,7 @@ func (s *Store) GenerateCOAReportArtifactForScope(scope Scope, input COAGenerati
 	if narrative := strings.TrimSpace(input.Narrative); narrative != "" {
 		generationInputs["narrative"] = narrative
 	}
-	return s.ReleaseReportArtifactForScope(scope, ReportReleaseInput{SampleID: input.SampleID, TemplateID: input.Template.ID, TemplateVersion: input.Template.Version, GenerationInputs: generationInputs, ArtifactFormat: artifact.Format, ArtifactContent: artifact.Content, SupersessionReason: "COA generated from template"}, actor)
+	return s.ReleaseReportArtifactForScope(scope, ReportReleaseInput{SampleID: input.SampleID, TemplateID: input.Template.ID, TemplateVersion: input.Template.Version, GenerationInputs: generationInputs, ArtifactFormat: artifact.Format, ArtifactContent: artifact.Content, ReleaseSignature: reportReleaseSignature(actor), SupersessionReason: "COA generated from template"}, actor)
 }
 
 func (s *Store) reportDataSnapshotForCOA(scope Scope, sampleID string) (ReportDataSnapshot, error) {

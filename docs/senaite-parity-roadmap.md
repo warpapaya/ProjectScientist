@@ -241,12 +241,12 @@ Tasks:
 - ReportSnapshot/ReportArtifact model.
 - COA renderer/template system.
 - COC package generation and attachment handling. Implemented for lab-test synthetic data as immutable content-hashed COC packages with attachment manifests and audit events.
-- Report release and amendment workflow.
+- Report release and amendment workflow. Lab-test v1 requires accepted/reviewed results, accepted QC batch readiness, immutable report artifact content, and a release signature equivalent before writing a released ReportSnapshot/ReportArtifact.
 - Label print artifacts.
 
 Exit criteria:
-- Released report artifacts are immutable and hash-addressed.
-- Amendments supersede, never silently edit.
+- Released report artifacts are immutable and hash-addressed, with releaser signature-equivalent provenance captured in the snapshot hash.
+- Amendments supersede via immutable supersession edges; released snapshots/artifacts/supersession links are never silently edited.
 - COA/COC package works with synthetic Tindall/CENLA-style data.
 
 ### Phase 7 — Migration and parity validation

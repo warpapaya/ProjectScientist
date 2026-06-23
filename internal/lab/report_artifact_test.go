@@ -38,6 +38,7 @@ func TestReportArtifactReleaseCapturesImmutableHashProvenanceAndSupersession(t *
 		GenerationInputs:   map[string]string{"format": "pdf", "locale": "en-US"},
 		ArtifactFormat:     "application/pdf",
 		ArtifactContent:    []byte("synthetic COA artifact v1"),
+		ReleaseSignature:   "report-releaser-1 signed release approval",
 		SupersessionReason: "initial release",
 	}, releaser)
 	if err != nil {
@@ -48,6 +49,9 @@ func TestReportArtifactReleaseCapturesImmutableHashProvenanceAndSupersession(t *
 	}
 	if first.Snapshot.ReviewedBy != "reviewer-1" || first.Snapshot.ReleasedBy != releaser.UserID || first.Snapshot.ReleasedAt.Before(releasedAtFloor) {
 		t.Fatalf("review/release provenance not captured: %#v", first.Snapshot)
+	}
+	if first.Snapshot.ReleaseSignature != "report-releaser-1 signed release approval" {
+		t.Fatalf("release signature equivalent not captured: %#v", first.Snapshot)
 	}
 	if first.Snapshot.DataSnapshot.Sample.ID != sample.ID || first.Snapshot.DataSnapshot.Sample.Status != StatusReleased || len(first.Snapshot.DataSnapshot.Results) != 1 || first.Snapshot.DataSnapshot.Results[0].Status != ResultStatusAccepted {
 		t.Fatalf("data snapshot should freeze released sample and accepted results: %#v", first.Snapshot.DataSnapshot)
@@ -76,6 +80,7 @@ func TestReportArtifactReleaseCapturesImmutableHashProvenanceAndSupersession(t *
 		GenerationInputs:   map[string]string{"format": "pdf", "locale": "en-US", "reason": "amended narrative"},
 		ArtifactFormat:     "application/pdf",
 		ArtifactContent:    []byte("synthetic COA artifact v2"),
+		ReleaseSignature:   "report-releaser-1 signed amendment approval",
 		SupersessionReason: "amended narrative",
 	}, releaser)
 	if err != nil {
@@ -91,6 +96,12 @@ func TestReportArtifactReleaseCapturesImmutableHashProvenanceAndSupersession(t *
 	if refetchedFirst.SupersededBySnapshotID != second.Snapshot.ID {
 		t.Fatalf("first snapshot should expose superseded-by link from append-only edge: %#v", refetchedFirst)
 	}
+	if _, err := store.DB().Exec(`UPDATE report_supersessions SET reason = 'silent edit' WHERE superseded_snapshot_id = ? AND superseding_snapshot_id = ?`, first.Snapshot.ID, second.Snapshot.ID); err == nil || !strings.Contains(err.Error(), "immutable") {
+		t.Fatalf("expected report supersession update to be rejected as immutable, got %v", err)
+	}
+	if _, err := store.DB().Exec(`DELETE FROM report_supersessions WHERE superseded_snapshot_id = ? AND superseding_snapshot_id = ?`, first.Snapshot.ID, second.Snapshot.ID); err == nil || !strings.Contains(err.Error(), "immutable") {
+		t.Fatalf("expected report supersession delete to be rejected as immutable, got %v", err)
+	}
 	if first.Snapshot.ContentHash == second.Snapshot.ContentHash || first.Artifact.ContentHash == second.Artifact.ContentHash {
 		t.Fatalf("template/input/content changes should change hashes: first=%#v second=%#v", first, second)
 	}
@@ -100,12 +111,41 @@ func TestReportArtifactReleaseRequiresReleasedSampleAndReportReleaser(t *testing
 	store, sample, _ := seedReleaseReadinessFixture(t)
 	defer store.Close()
 
-	input := ReportReleaseInput{SampleID: sample.ID, TemplateID: "coa-standard", TemplateVersion: "2026.06", ArtifactFormat: "text/plain", ArtifactContent: []byte("draft")}
+	input := ReportReleaseInput{SampleID: sample.ID, TemplateID: "coa-standard", TemplateVersion: "2026.06", ArtifactFormat: "text/plain", ArtifactContent: []byte("draft"), ReleaseSignature: "report-releaser-1 signed release approval"}
 	if _, err := store.ReleaseReportArtifact(input, testActorWithRoles("reviewer-only", RoleReviewer)); err == nil || !strings.Contains(err.Error(), "report release") {
 		t.Fatalf("expected report release permission denial, got %v", err)
 	}
 	if _, err := store.ReleaseReportArtifact(input, testActorWithRoles("report-releaser-1", RoleReportReleaser)); err == nil || !strings.Contains(err.Error(), "released sample") {
 		t.Fatalf("expected unreleased sample denial, got %v", err)
+	}
+}
+
+func TestReportArtifactReleaseRejectsMissingSignatureAndIncompleteQCEvenIfSampleStatusWasForced(t *testing.T) {
+	store, sample, _ := seedReleaseReadinessFixture(t)
+	defer store.Close()
+
+	manager := testActorWithRoles("release-manager", RoleLabManager)
+	if err := advanceSampleToReview(store, sample.ID, manager); err != nil {
+		t.Fatalf("advance sample to review: %v", err)
+	}
+	result := store.ResultsForScope(DefaultScope)[0]
+	if _, err := store.ReviewResult(result.ID, ResultReviewInput{Decision: ResultDecisionAccept, Comments: "approved for COA", EnforceReviewerSeparation: true}, testActorWithRoles("reviewer-1", RoleReviewer)); err != nil {
+		t.Fatalf("accept result: %v", err)
+	}
+
+	// Simulate bad operator data repair/status drift. Artifact release must still
+	// enforce the QC precondition instead of trusting sample.status alone.
+	if _, err := store.DB().Exec(`UPDATE samples SET status = ? WHERE id = ?`, string(StatusReleased), sample.ID); err != nil {
+		t.Fatalf("force sample status: %v", err)
+	}
+	releaser := testActorWithRoles("report-releaser-1", RoleReportReleaser)
+	input := ReportReleaseInput{SampleID: sample.ID, TemplateID: "coa-standard", TemplateVersion: "2026.06", ArtifactFormat: "text/plain", ArtifactContent: []byte("draft")}
+	if _, err := store.ReleaseReportArtifact(input, releaser); err == nil || !strings.Contains(err.Error(), "signature") {
+		t.Fatalf("expected missing release signature denial, got %v", err)
+	}
+	input.ReleaseSignature = "report-releaser-1 signed release approval"
+	if _, err := store.ReleaseReportArtifact(input, releaser); err == nil || !strings.Contains(err.Error(), "QC batch") {
+		t.Fatalf("expected incomplete QC denial, got %v", err)
 	}
 }
 
@@ -118,11 +158,11 @@ func TestReportArtifactHashIsStableForEquivalentInputs(t *testing.T) {
 
 	sample := Sample{ID: "S-123", TenantID: DefaultTenantID, LabID: DefaultLabID, Status: StatusReleased}
 	results := []Result{{ID: "R-1", SampleID: sample.ID, Status: ResultStatusAccepted, ReviewedBy: "reviewer-1"}}
-	left, err := buildReportSnapshotPayload(sample, results, "coa", "v1", map[string]string{"b": "2", "a": "1"}, "releaser", time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC))
+	left, err := buildReportSnapshotPayload(sample, results, "coa", "v1", map[string]string{"b": "2", "a": "1"}, "releaser", "releaser signed release approval", time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("build left payload: %v", err)
 	}
-	right, err := buildReportSnapshotPayload(sample, results, "coa", "v1", map[string]string{"a": "1", "b": "2"}, "releaser", time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC))
+	right, err := buildReportSnapshotPayload(sample, results, "coa", "v1", map[string]string{"a": "1", "b": "2"}, "releaser", "releaser signed release approval", time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("build right payload: %v", err)
 	}
