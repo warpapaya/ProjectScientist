@@ -4,6 +4,7 @@ tmp/
 bin/
 build/
 dist/
+artifacts/
 coverage.out
 *.log
 *.tmp
