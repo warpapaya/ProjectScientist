@@ -13,6 +13,7 @@ import (
 func TestAegisReportPreviewRejectsCallerSelectedTenantWithoutMembership(t *testing.T) {
 	app, victimScope, sampleID := seededPreviewVictimApp(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/samples/"+sampleID+"/report-preview", nil)
+	addDefaultSessionCookie(req)
 	req.Header.Set("X-PSC-Tenant-ID", victimScope.TenantID)
 	req.Header.Set("X-PSC-Lab-ID", victimScope.LabID)
 	rr := httptest.NewRecorder()
@@ -43,5 +44,5 @@ func seededPreviewVictimApp(t *testing.T) (*app, lab.Scope, string) {
 	if err != nil {
 		t.Fatalf("create sample: %v", err)
 	}
-	return &app{store: store}, victimScope, sample.ID
+	return attachDefaultSession(t, &app{store: store}), victimScope, sample.ID
 }

@@ -18,7 +18,7 @@ func TestSampleLabelArtifactHTTPAndUIAction(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}
+	app := attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))})
 	actor := lab.MustActorContext(lab.ActorContextInput{UserID: "http-label", RequestID: "http-label", CorrelationID: "http-label", TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleLabManager)}}}, Roles: []string{string(lab.RoleLabManager)}})
 	client, _ := store.CreateClient("Label HTTP Client", "label-http@example.test", actor)
 	sample, err := store.CreateSample(lab.CreateSampleInput{ClientID: client.ID, Project: "Label HTTP", ClientSampleID: "client-01", LabSampleID: "PS-2026-0002", Matrix: "Water", Tests: []string{"Lead"}}, actor)
@@ -27,7 +27,7 @@ func TestSampleLabelArtifactHTTPAndUIAction(t *testing.T) {
 	}
 
 	indexRR := httptest.NewRecorder()
-	app.index(indexRR, httptest.NewRequest(http.MethodGet, "/", nil))
+	app.index(indexRR, newDefaultSessionRequest(http.MethodGet, "/", nil))
 	if body := indexRR.Body.String(); !strings.Contains(body, "/api/samples/"+sample.ID+"/label-artifact") || !strings.Contains(body, "Print label") {
 		t.Fatalf("workflow page missing label print action:\n%s", body)
 	}

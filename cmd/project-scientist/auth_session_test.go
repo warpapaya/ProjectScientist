@@ -1,0 +1,189 @@
+package main
+
+import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/warpapaya/ProjectScientist/internal/lab"
+)
+
+func TestCreateClientRequiresAuthenticatedSession(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app := newSessionTestApp(store)
+
+	form := url.Values{}
+	form.Set("name", "No Session Lab")
+	form.Set("email", "no-session@example.test")
+	req := httptest.NewRequest(http.MethodPost, "/api/clients", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	rr := httptest.NewRecorder()
+
+	app.createClient(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for missing session, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := len(store.Clients()); got != 0 {
+		t.Fatalf("missing session should create no clients, got %d", got)
+	}
+}
+
+func TestCreateClientRejectsExpiredSession(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	now := time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
+	app, token := newSessionTestAppWithSession(t, store, "expired-user", lab.DefaultTenantID, lab.DefaultLabID, now.Add(-time.Minute))
+	app.now = func() time.Time { return now }
+
+	form := url.Values{}
+	form.Set("name", "Expired Session Lab")
+	form.Set("email", "expired@example.test")
+	req := httptest.NewRequest(http.MethodPost, "/api/clients", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rr := httptest.NewRecorder()
+
+	app.createClient(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for expired session, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := len(store.Clients()); got != 0 {
+		t.Fatalf("expired session should create no clients, got %d", got)
+	}
+}
+
+func TestCreateClientBindsTenantToServerSideSessionNotRequestInputs(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app, token := newSessionTestAppWithSession(t, store, "alpha-manager", "tenant-alpha", lab.DefaultLabID, time.Now().Add(time.Hour))
+
+	form := url.Values{}
+	form.Set("name", "Attempted Cross Tenant Lab")
+	form.Set("email", "cross-tenant@example.test")
+	form.Set("tenant_id", "tenant-beta")
+	req := httptest.NewRequest(http.MethodPost, "/api/clients?tenant_id=tenant-beta", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-PSC-Tenant-ID", "tenant-beta")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rr := httptest.NewRecorder()
+
+	app.createClient(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for caller-selected cross-tenant scope, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := len(store.Clients()); got != 0 {
+		t.Fatalf("cross-tenant request should create no clients, got %d", got)
+	}
+	if events, err := store.AuditEvents(0); err != nil {
+		t.Fatalf("audit events: %v", err)
+	} else if len(events) != 0 {
+		t.Fatalf("caller-selected scope should be rejected before audited mutation, got %#v", events)
+	}
+}
+
+func TestCreateClientUsesServerSideSessionScopeWhenRequestHasNoTenant(t *testing.T) {
+	store, err := lab.OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	app, token := newSessionTestAppWithSession(t, store, "alpha-manager", "tenant-alpha", lab.DefaultLabID, time.Now().Add(time.Hour))
+
+	form := url.Values{}
+	form.Set("name", "Alpha Session Lab")
+	form.Set("email", "alpha@example.test")
+	req := httptest.NewRequest(http.MethodPost, "/api/clients", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rr := httptest.NewRecorder()
+
+	app.createClient(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for trusted session scope, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	clients := store.ClientsForScope(lab.Scope{TenantID: "tenant-alpha", LabID: lab.DefaultLabID})
+	if len(clients) != 1 || clients[0].TenantID != "tenant-alpha" || clients[0].LabID != lab.DefaultLabID {
+		t.Fatalf("expected client scoped to trusted session claims, got %#v", clients)
+	}
+}
+
+const defaultTestSessionToken = "test-session-default"
+
+func newSessionTestApp(store *lab.Store) *app {
+	return &app{store: store, sessions: map[string]authenticatedSession{}, now: time.Now}
+}
+
+func attachDefaultSession(t *testing.T, application *app) *app {
+	t.Helper()
+	if application.sessions == nil {
+		application.sessions = map[string]authenticatedSession{}
+	}
+	if application.now == nil {
+		application.now = time.Now
+	}
+	roles := []string{string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser), string(lab.RoleAdmin)}
+	application.sessions[defaultTestSessionToken] = authenticatedSession{
+		Actor: lab.MustActorContext(lab.ActorContextInput{
+			UserID:            "lab-dev",
+			DisplayName:       "lab-dev",
+			AuthProvider:      "test-session",
+			TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: roles}},
+			Roles:             roles,
+			RequestID:         "test-session-bootstrap",
+			CorrelationID:     "test-session-bootstrap",
+		}),
+		Scope:     lab.Scope{TenantID: lab.DefaultTenantID, LabID: lab.DefaultLabID},
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	return application
+}
+
+func addDefaultSessionCookie(req *http.Request) {
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: defaultTestSessionToken})
+}
+
+func newDefaultSessionRequest(method, target string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, target, body)
+	addDefaultSessionCookie(req)
+	return req
+}
+
+func newSessionTestAppWithSession(t *testing.T, store *lab.Store, userID, tenantID, labID string, expiresAt time.Time) (*app, string) {
+	t.Helper()
+	application := newSessionTestApp(store)
+	token := "test-session-" + userID + "-" + tenantID
+	roles := []string{string(lab.RoleLabManager), string(lab.RoleAnalyst), string(lab.RoleReviewer), string(lab.RoleReportReleaser)}
+	application.sessions[token] = authenticatedSession{
+		Actor: lab.MustActorContext(lab.ActorContextInput{
+			UserID:            userID,
+			DisplayName:       userID,
+			AuthProvider:      "test-session",
+			TenantMemberships: []lab.TenantMembership{{TenantID: tenantID, Roles: roles}},
+			Roles:             roles,
+			RequestID:         "test-session-bootstrap",
+			CorrelationID:     "test-session-bootstrap",
+		}),
+		Scope:     lab.Scope{TenantID: tenantID, LabID: labID},
+		ExpiresAt: expiresAt,
+	}
+	return application, token
+}

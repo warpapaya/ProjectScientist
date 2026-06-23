@@ -15,7 +15,8 @@ import (
 func TestAegisChallengeIndexDoesNotLeakTenantSelectedOnlyByHeader(t *testing.T) {
 	app, victimScope := seededIndexVictimApp(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := newDefaultSessionRequest(http.MethodGet, "/", nil)
+	addDefaultSessionCookie(req)
 	req.Header.Set("X-PSC-Tenant-ID", victimScope.TenantID)
 	req.Header.Set("X-PSC-Lab-ID", victimScope.LabID)
 
@@ -29,13 +30,15 @@ func TestAegisChallengeIndexDoesNotLeakTenantSelectedOnlyByQuery(t *testing.T) {
 	query.Set("tenant_id", victimScope.TenantID)
 	query.Set("lab_id", victimScope.LabID)
 	req := httptest.NewRequest(http.MethodGet, "/?"+query.Encode(), nil)
+	addDefaultSessionCookie(req)
 
 	assertIndexDoesNotLeakVictimScope(t, app, req)
 }
 
 func TestDefaultIndexReturnsOK(t *testing.T) {
 	app, _ := seededIndexVictimApp(t)
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := newDefaultSessionRequest(http.MethodGet, "/", nil)
+	addDefaultSessionCookie(req)
 	rr := httptest.NewRecorder()
 
 	app.index(rr, req)
@@ -64,7 +67,7 @@ func seededIndexVictimApp(t *testing.T) (*app, lab.Scope) {
 		t.Fatalf("seed victim client: %v", err)
 	}
 
-	return &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}, victimScope
+	return attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}), victimScope
 }
 
 func assertIndexDoesNotLeakVictimScope(t *testing.T, app *app, req *http.Request) {

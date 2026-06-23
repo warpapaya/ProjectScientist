@@ -17,7 +17,7 @@ func TestMasterDataAPICreateAndListState(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store}
+	app := attachDefaultSession(t, &app{store: store})
 
 	clientResp := performForm(t, app.createClient, "/api/clients", url.Values{"name": {"Alpha Environmental"}, "email": {"lab@example.test"}}, lab.DefaultTenantID, lab.DefaultLabID)
 	if clientResp.Code != http.StatusCreated {

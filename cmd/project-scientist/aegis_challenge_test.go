@@ -18,12 +18,13 @@ func TestAegisChallengeHTTPDoesNotGrantTenantMembershipFromSpoofedScopeHeader(t 
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store}
+	app := attachDefaultSession(t, &app{store: store})
 
 	form := url.Values{}
 	form.Set("name", "Injected Tenant Client")
 	form.Set("email", "attacker@example.test")
 	req := httptest.NewRequest(http.MethodPost, "/api/clients", strings.NewReader(form.Encode()))
+	addDefaultSessionCookie(req)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-PSC-Tenant-ID", "tenant-attacker-controlled")
@@ -46,12 +47,13 @@ func TestAegisChallengeHTTPDoesNotAcceptSpoofedLabScopeHeader(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store}
+	app := attachDefaultSession(t, &app{store: store})
 
 	form := url.Values{}
 	form.Set("name", "Injected Lab Client")
 	form.Set("email", "attacker@example.test")
 	req := httptest.NewRequest(http.MethodPost, "/api/clients", strings.NewReader(form.Encode()))
+	addDefaultSessionCookie(req)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-PSC-Tenant-ID", lab.DefaultTenantID)
@@ -71,7 +73,8 @@ func TestAegisChallengeHTTPDoesNotAcceptSpoofedLabScopeHeader(t *testing.T) {
 func TestAegisChallengeAPIStateDoesNotLeakTenantSelectedOnlyByHeader(t *testing.T) {
 	app, victimScope := seededAPIStateVictimApp(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/state", nil)
+	req := newDefaultSessionRequest(http.MethodGet, "/api/state", nil)
+	addDefaultSessionCookie(req)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-PSC-Tenant-ID", victimScope.TenantID)
 	req.Header.Set("X-PSC-Lab-ID", victimScope.LabID)
@@ -86,6 +89,7 @@ func TestAegisChallengeAPIStateDoesNotLeakTenantSelectedOnlyByQuery(t *testing.T
 	query.Set("tenant_id", victimScope.TenantID)
 	query.Set("lab_id", victimScope.LabID)
 	req := httptest.NewRequest(http.MethodGet, "/api/state?"+query.Encode(), nil)
+	addDefaultSessionCookie(req)
 	req.Header.Set("Accept", "application/json")
 
 	assertAPIStateDoesNotLeakVictimScope(t, app, req)
@@ -98,6 +102,7 @@ func TestAegisChallengeAPIStateDoesNotLeakTenantSelectedOnlyByForm(t *testing.T)
 	form.Set("tenant_id", victimScope.TenantID)
 	form.Set("lab_id", victimScope.LabID)
 	req := httptest.NewRequest(http.MethodPost, "/api/state", strings.NewReader(form.Encode()))
+	addDefaultSessionCookie(req)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -121,7 +126,7 @@ func seededAPIStateVictimApp(t *testing.T) (*app, lab.Scope) {
 	if _, err := store.CreateClientForScope(victimScope, "Victim Client", "victim@example.test", victimActor); err != nil {
 		t.Fatalf("seed victim client: %v", err)
 	}
-	return &app{store: store}, victimScope
+	return attachDefaultSession(t, &app{store: store}), victimScope
 }
 
 func assertAPIStateDoesNotLeakVictimScope(t *testing.T, app *app, req *http.Request) {

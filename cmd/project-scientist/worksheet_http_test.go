@@ -19,12 +19,12 @@ func TestWorksheetHTTPAPIAndHTMLSmoke(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}
+	app := attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))})
 	actor := lab.MustActorContext(lab.ActorContextInput{UserID: "worksheet-http", RequestID: "worksheet-http", CorrelationID: "worksheet-http", TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleLabManager)}}}, Roles: []string{string(lab.RoleLabManager)}})
 	lines := createHTTPWorksheetLines(t, store, actor)
 
 	indexRR := httptest.NewRecorder()
-	app.index(indexRR, httptest.NewRequest(http.MethodGet, "/", nil))
+	app.index(indexRR, newDefaultSessionRequest(http.MethodGet, "/", nil))
 	if indexRR.Code != http.StatusOK {
 		t.Fatalf("index status=%d body=%s", indexRR.Code, indexRR.Body.String())
 	}

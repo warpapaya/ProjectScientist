@@ -18,9 +18,10 @@ func TestAdminConfigIndexRendersLowClickWorkbench(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	application := &app{store: store, tmpl: template.Must(template.ParseFiles("../../web/templates/index.html"))}
+	application := attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles("../../web/templates/index.html"))})
 
 	req := httptest.NewRequest(http.MethodGet, "/?tenant_id="+lab.DefaultTenantID+"&lab_id="+lab.DefaultLabID, nil)
+	addDefaultSessionCookie(req)
 	rec := httptest.NewRecorder()
 	application.index(rec, req)
 	if rec.Code != http.StatusOK {

@@ -12,6 +12,7 @@ import (
 func TestAegisReportArtifactDownloadRejectsCallerSelectedTenantWithoutMembership(t *testing.T) {
 	app, victimScope, artifactID, _ := seededDownloadVictimApp(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/report-artifacts/"+artifactID, nil)
+	addDefaultSessionCookie(req)
 	req.Header.Set("X-PSC-Tenant-ID", victimScope.TenantID)
 	req.Header.Set("X-PSC-Lab-ID", victimScope.LabID)
 	rr := httptest.NewRecorder()
@@ -28,6 +29,7 @@ func TestAegisReportArtifactDownloadRejectsCallerSelectedTenantWithoutMembership
 func TestAegisCOCPackageDownloadRejectsCallerSelectedTenantWithoutMembership(t *testing.T) {
 	app, victimScope, _, cocID := seededDownloadVictimApp(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/coc-packages/"+cocID, nil)
+	addDefaultSessionCookie(req)
 	req.Header.Set("X-PSC-Tenant-ID", victimScope.TenantID)
 	req.Header.Set("X-PSC-Lab-ID", victimScope.LabID)
 	rr := httptest.NewRecorder()
@@ -85,5 +87,5 @@ func seededDownloadVictimApp(t *testing.T) (*app, lab.Scope, string, string) {
 	if err != nil {
 		t.Fatalf("generate COC package: %v", err)
 	}
-	return &app{store: store}, victimScope, released.Artifact.ID, pkg.ID
+	return attachDefaultSession(t, &app{store: store}), victimScope, released.Artifact.ID, pkg.ID
 }

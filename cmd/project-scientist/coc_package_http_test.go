@@ -21,7 +21,7 @@ func TestCOCPackageHTTPGeneratesSyntheticPackageAndExposesWorkflowAction(t *test
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}
+	app := attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))})
 	actor := lab.MustActorContext(lab.ActorContextInput{UserID: "http-package-releaser", RequestID: "http-package-releaser", CorrelationID: "http-package-releaser", TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleLabManager), string(lab.RoleReportReleaser)}}}, Roles: []string{string(lab.RoleLabManager), string(lab.RoleReportReleaser)}})
 	client, _ := store.CreateClient("COC Package HTTP Client", "coc-package-http@example.test", actor)
 	sample, err := store.CreateSample(lab.CreateSampleInput{ClientID: client.ID, Project: "COC Package HTTP", ClientSampleID: "HTTP-FIELD-1", Matrix: "Water", Tests: []string{"pH"}}, actor)
@@ -61,5 +61,5 @@ func TestCOCPackageHTTPGeneratesSyntheticPackageAndExposesWorkflowAction(t *test
 
 func httptestNewRecorder() *httptest.ResponseRecorder { return httptest.NewRecorder() }
 func httptestNewRequest(method, target string, body io.Reader) *http.Request {
-	return httptest.NewRequest(method, target, body)
+	return newDefaultSessionRequest(method, target, body)
 }

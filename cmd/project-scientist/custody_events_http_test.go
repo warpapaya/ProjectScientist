@@ -19,7 +19,7 @@ func TestCustodyEventsHTTPAndHTMLCreateView(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}
+	app := attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))})
 	actor := lab.MustActorContext(lab.ActorContextInput{UserID: "http-custodian", RequestID: "http-custodian", CorrelationID: "http-custodian", TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleLabManager)}}}, Roles: []string{string(lab.RoleLabManager)}})
 	client, _ := store.CreateClient("Custody HTTP Client", "custody-http@example.test", actor)
 	sample, err := store.CreateSample(lab.CreateSampleInput{ClientID: client.ID, Project: "COC HTTP", Matrix: "Water", Tests: []string{"pH"}}, actor)
@@ -28,7 +28,7 @@ func TestCustodyEventsHTTPAndHTMLCreateView(t *testing.T) {
 	}
 
 	indexRR := httptest.NewRecorder()
-	app.index(indexRR, httptest.NewRequest(http.MethodGet, "/", nil))
+	app.index(indexRR, newDefaultSessionRequest(http.MethodGet, "/", nil))
 	if body := indexRR.Body.String(); !strings.Contains(body, "Custody history") || !strings.Contains(body, "name=\"custody_type\"") || !strings.Contains(body, "name=\"custody_location\"") {
 		t.Fatalf("index missing custody create/view affordances:\n%s", body)
 	}
@@ -54,7 +54,7 @@ func TestCustodyEventsHTTPAndHTMLCreateView(t *testing.T) {
 		t.Fatalf("API state missing custody history: %s", state.Body.String())
 	}
 	viewRR := httptest.NewRecorder()
-	app.index(viewRR, httptest.NewRequest(http.MethodGet, "/", nil))
+	app.index(viewRR, newDefaultSessionRequest(http.MethodGet, "/", nil))
 	if body := viewRR.Body.String(); !strings.Contains(body, "Receiving fridge A") || !strings.Contains(body, "COC intake") {
 		t.Fatalf("workflow view missing custody history:\n%s", body)
 	}

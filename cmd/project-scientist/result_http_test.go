@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"testing"
@@ -17,9 +16,9 @@ func TestCreateResultHTTPPersistsResultAndReturnsJSON(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store}
+	app := attachDefaultSession(t, &app{store: store})
 
-	seedActor := actor(httptest.NewRequest(http.MethodGet, "/", nil))
+	seedActor := actor(newDefaultSessionRequest(http.MethodGet, "/", nil))
 	client, err := store.CreateClient("Seed Lab", "seed@example.test", seedActor)
 	if err != nil {
 		t.Fatalf("seed client: %v", err)

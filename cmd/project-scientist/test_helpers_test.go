@@ -11,6 +11,7 @@ import (
 func performForm(t *testing.T, handler http.HandlerFunc, path string, form url.Values, tenantID, labID string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	addDefaultSessionCookie(req)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-PSC-Tenant-ID", tenantID)
@@ -23,6 +24,7 @@ func performForm(t *testing.T, handler http.HandlerFunc, path string, form url.V
 func performGet(t *testing.T, handler http.HandlerFunc, path, tenantID, labID string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
+	addDefaultSessionCookie(req)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-PSC-Tenant-ID", tenantID)
 	req.Header.Set("X-PSC-Lab-ID", labID)

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/warpapaya/ProjectScientist/internal/lab"
 )
@@ -19,7 +20,7 @@ func TestCreateClientIgnoresSpoofedActorHeaderAndFormForAuditIdentity(t *testing
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store}
+	app, token := newSessionTestAppWithSession(t, store, "lab-dev", lab.DefaultTenantID, lab.DefaultLabID, time.Now().Add(time.Hour))
 
 	form := url.Values{}
 	form.Set("name", "Spoof Test Lab")
@@ -30,6 +31,7 @@ func TestCreateClientIgnoresSpoofedActorHeaderAndFormForAuditIdentity(t *testing
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-PSC-Actor", "header-attacker")
 	req.Header.Set("X-PSC-Request-ID", "req-spoof")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
 	rr := httptest.NewRecorder()
 
 	app.createClient(rr, req)
@@ -92,7 +94,7 @@ func TestCreateClientRejectsArbitraryTenantSelectionWithoutTrustedMembership(t *
 				t.Fatalf("open store: %v", err)
 			}
 			defer store.Close()
-			app := &app{store: store}
+			app, token := newSessionTestAppWithSession(t, store, "lab-dev", lab.DefaultTenantID, lab.DefaultLabID, time.Now().Add(time.Hour))
 
 			form := url.Values{}
 			form.Set("name", "Boundary Test Lab")
@@ -103,6 +105,7 @@ func TestCreateClientRejectsArbitraryTenantSelectionWithoutTrustedMembership(t *
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			req.Header.Set("Accept", "application/json")
 			req.Header.Set("X-PSC-Request-ID", "req-tenant-boundary")
+			req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
 			rr := httptest.NewRecorder()
 
 			app.createClient(rr, req)
@@ -116,11 +119,8 @@ func TestCreateClientRejectsArbitraryTenantSelectionWithoutTrustedMembership(t *
 			if err != nil {
 				t.Fatalf("audit events: %v", err)
 			}
-			if len(events) != 1 {
-				t.Fatalf("expected one denied audit event, got %d", len(events))
-			}
-			if events[0].TenantID != tc.tenantID || events[0].Outcome != lab.AuditOutcomeDenied || events[0].ActorContext.UserID != "lab-dev" {
-				t.Fatalf("expected denied audit scoped to selected tenant with trusted local actor, got %#v", events[0])
+			if len(events) != 0 {
+				t.Fatalf("caller-selected scope must be rejected before audit/mutation, got %#v", events)
 			}
 		})
 	}
@@ -132,22 +132,22 @@ func TestCreateClientAllowsTrustedLocalLabTestTenant(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store}
+	app, token := newSessionTestAppWithSession(t, store, "lab-dev", "lab-test", lab.DefaultLabID, time.Now().Add(time.Hour))
 
 	form := url.Values{}
 	form.Set("name", "Lab Test Client")
 	form.Set("email", "lab-test@example.test")
-	form.Set("tenant_id", "lab-test")
 	req := httptest.NewRequest(http.MethodPost, "/api/clients", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
 	rr := httptest.NewRecorder()
 
 	app.createClient(rr, req)
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("expected lab-test local tenant to remain usable, got %d body=%s", rr.Code, rr.Body.String())
 	}
-	clients := store.Clients()
+	clients := store.ClientsForScope(lab.Scope{TenantID: "lab-test", LabID: lab.DefaultLabID})
 	if len(clients) != 1 || clients[0].TenantID != "lab-test" {
 		t.Fatalf("expected client in lab-test tenant, got %#v", clients)
 	}
@@ -159,8 +159,8 @@ func TestCreateSampleIgnoresSpoofedActorHeaderAndFormForAuditIdentity(t *testing
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store}
-	client, err := store.CreateClient("Seed Lab", "seed@example.test", actor(httptest.NewRequest(http.MethodGet, "/", nil)))
+	app, token := newSessionTestAppWithSession(t, store, "lab-dev", lab.DefaultTenantID, lab.DefaultLabID, time.Now().Add(time.Hour))
+	client, err := store.CreateClient("Seed Lab", "seed@example.test", actor(newDefaultSessionRequest(http.MethodGet, "/", nil)))
 	if err != nil {
 		t.Fatalf("seed client: %v", err)
 	}
@@ -176,6 +176,7 @@ func TestCreateSampleIgnoresSpoofedActorHeaderAndFormForAuditIdentity(t *testing
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-PSC-Actor", "header-attacker")
 	req.Header.Set("X-PSC-Request-ID", "req-sample-spoof")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
 	rr := httptest.NewRecorder()
 
 	app.createSample(rr, req)
@@ -191,8 +192,8 @@ func TestTransitionSampleIgnoresSpoofedActorHeaderAndFormForAuditIdentity(t *tes
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store}
-	seedReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	app, token := newSessionTestAppWithSession(t, store, "lab-dev", lab.DefaultTenantID, lab.DefaultLabID, time.Now().Add(time.Hour))
+	seedReq := newDefaultSessionRequest(http.MethodGet, "/", nil)
 	seedActor := actor(seedReq)
 	client, err := store.CreateClient("Seed Lab", "seed@example.test", seedActor)
 	if err != nil {
@@ -211,6 +212,7 @@ func TestTransitionSampleIgnoresSpoofedActorHeaderAndFormForAuditIdentity(t *tes
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-PSC-Actor", "header-attacker")
 	req.Header.Set("X-PSC-Request-ID", "req-transition-spoof")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
 	rr := httptest.NewRecorder()
 
 	app.transitionSample(rr, req)

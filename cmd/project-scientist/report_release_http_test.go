@@ -16,10 +16,10 @@ import (
 func TestReportReleaseDeskShowsBlockedReleaseAndAmendmentActions(t *testing.T) {
 	store, sample := labSeedReportReleaseHTTPFixture(t)
 	defer store.Close()
-	app := &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}
+	app := attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))})
 
 	indexRR := httptest.NewRecorder()
-	app.index(indexRR, httptest.NewRequest(http.MethodGet, "/", nil))
+	app.index(indexRR, newDefaultSessionRequest(http.MethodGet, "/", nil))
 	if indexRR.Code != http.StatusOK {
 		t.Fatalf("index status=%d body=%s", indexRR.Code, indexRR.Body.String())
 	}
@@ -31,7 +31,7 @@ func TestReportReleaseDeskShowsBlockedReleaseAndAmendmentActions(t *testing.T) {
 	}
 
 	previewRR := httptest.NewRecorder()
-	app.routes().ServeHTTP(previewRR, httptest.NewRequest(http.MethodGet, "/api/samples/"+sample.ID+"/report-preview?tenant_id="+lab.DefaultTenantID+"&lab_id="+lab.DefaultLabID, nil))
+	app.routes().ServeHTTP(previewRR, newDefaultSessionRequest(http.MethodGet, "/api/samples/"+sample.ID+"/report-preview?tenant_id="+lab.DefaultTenantID+"&lab_id="+lab.DefaultLabID, nil))
 	if previewRR.Code != http.StatusOK || !strings.Contains(previewRR.Body.String(), "CERTIFICATE OF ANALYSIS") || !strings.Contains(previewRR.Body.String(), sample.ID) {
 		t.Fatalf("preview should render COA content without releasing, status=%d body=%s", previewRR.Code, previewRR.Body.String())
 	}
@@ -59,7 +59,7 @@ func TestReportReleaseDeskShowsBlockedReleaseAndAmendmentActions(t *testing.T) {
 	}
 
 	readyRR := httptest.NewRecorder()
-	app.index(readyRR, httptest.NewRequest(http.MethodGet, "/", nil))
+	app.index(readyRR, newDefaultSessionRequest(http.MethodGet, "/", nil))
 	readyBody := readyRR.Body.String()
 	for _, want := range []string{"Ready", "Amend report", "Download current report", "Download COC package"} {
 		if !strings.Contains(readyBody, want) {

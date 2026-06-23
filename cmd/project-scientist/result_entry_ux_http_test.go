@@ -17,7 +17,7 @@ func TestResultEntryGridAndReviewDeskExposeKeyboardFriendlyWorkflow(t *testing.T
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	app := &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))}
+	app := attachDefaultSession(t, &app{store: store, tmpl: template.Must(template.ParseFiles(filepath.Join("..", "..", "web", "templates", "index.html")))})
 	actor := lab.MustActorContext(lab.ActorContextInput{UserID: "ux-seed", RequestID: "ux-seed", CorrelationID: "ux-seed", TenantMemberships: []lab.TenantMembership{{TenantID: lab.DefaultTenantID, Roles: []string{string(lab.RoleLabManager)}}}, Roles: []string{string(lab.RoleLabManager)}})
 	client, err := store.CreateClient("UX Lab", "ux@example.test", actor)
 	if err != nil {
@@ -36,7 +36,7 @@ func TestResultEntryGridAndReviewDeskExposeKeyboardFriendlyWorkflow(t *testing.T
 	}
 
 	rr := httptest.NewRecorder()
-	app.index(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+	app.index(rr, newDefaultSessionRequest(http.MethodGet, "/", nil))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("index status=%d body=%s", rr.Code, rr.Body.String())
 	}
