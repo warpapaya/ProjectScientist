@@ -37,6 +37,7 @@ type pageData struct {
 	ClientDefaults              []lab.ClientDefaults
 	Samples                     []lab.Sample
 	Results                     []lab.Result
+	ReportReadiness             []lab.ReportReleaseReadiness
 	Audit                       []lab.AuditEvent
 	Departments                 []lab.CatalogDepartment
 	Units                       []lab.CatalogUnit
@@ -117,38 +118,44 @@ func serve() error {
 		demoResetEnabled: strings.EqualFold(getenv("PSC_ENABLE_DEMO_RESET", "false"), "true"),
 		fixturePath:      getenv("PSC_SYNTHETIC_FIXTURE_PATH", "/app/fixtures/mvp_synthetic_lab.json"),
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", application.index)
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
-	mux.HandleFunc("GET /api/state", application.apiState)
-	mux.HandleFunc("POST /api/demo/reset", application.demoReset)
-	mux.HandleFunc("POST /api/clients", application.createClient)
-	mux.HandleFunc("POST /api/sites", application.createSite)
-	mux.HandleFunc("POST /api/contacts", application.createContact)
-	mux.HandleFunc("POST /api/contact-roles", application.assignContactRole)
-	mux.HandleFunc("POST /api/projects", application.createProject)
-	mux.HandleFunc("POST /api/client-defaults", application.upsertClientDefaults)
-	mux.HandleFunc("POST /api/sample-intake-templates", application.createSampleIntakeTemplate)
-	mux.HandleFunc("POST /api/sample-intake-templates/", application.createSamplesFromTemplate)
-	mux.HandleFunc("POST /api/results", application.createResult)
-	mux.HandleFunc("POST /api/results/", application.resultAction)
-	mux.HandleFunc("POST /api/samples", application.createSample)
-	mux.HandleFunc("GET /api/samples/", application.sampleLabelArtifact)
-	mux.HandleFunc("POST /api/samples/", application.sampleAction)
-	mux.HandleFunc("POST /api/worksheets", application.createWorksheet)
-	mux.HandleFunc("POST /api/worksheets/", application.routeWorksheetMutation)
-	mux.HandleFunc("POST /api/catalog/departments", application.createCatalogDepartment)
-	mux.HandleFunc("POST /api/catalog/units", application.createCatalogUnit)
-	mux.HandleFunc("POST /api/catalog/methods", application.createCatalogMethod)
-	mux.HandleFunc("POST /api/catalog/analytes", application.createCatalogAnalyte)
-	mux.HandleFunc("POST /api/catalog/services", application.createAnalysisService)
-	mux.HandleFunc("POST /api/catalog/profiles", application.createAnalysisProfile)
-	mux.HandleFunc("POST /api/sample-reference", application.createSampleReferenceItem)
-	mux.HandleFunc("POST /api/sample-reference/", application.updateSampleReferenceItem)
-	mux.HandleFunc("DELETE /api/sample-reference/", application.deleteSampleReferenceItem)
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	log.Printf("Project Scientist listening on %s", addr)
-	return http.ListenAndServe(addr, securityHeaders(mux))
+	return http.ListenAndServe(addr, securityHeaders(application.routes()))
+}
+
+func (a *app) routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", a.index)
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+	mux.HandleFunc("GET /api/state", a.apiState)
+	mux.HandleFunc("POST /api/demo/reset", a.demoReset)
+	mux.HandleFunc("POST /api/clients", a.createClient)
+	mux.HandleFunc("POST /api/sites", a.createSite)
+	mux.HandleFunc("POST /api/contacts", a.createContact)
+	mux.HandleFunc("POST /api/contact-roles", a.assignContactRole)
+	mux.HandleFunc("POST /api/projects", a.createProject)
+	mux.HandleFunc("POST /api/client-defaults", a.upsertClientDefaults)
+	mux.HandleFunc("POST /api/sample-intake-templates", a.createSampleIntakeTemplate)
+	mux.HandleFunc("POST /api/sample-intake-templates/", a.createSamplesFromTemplate)
+	mux.HandleFunc("POST /api/results", a.createResult)
+	mux.HandleFunc("POST /api/results/", a.resultAction)
+	mux.HandleFunc("POST /api/samples", a.createSample)
+	mux.HandleFunc("GET /api/samples/", a.sampleDownloadAction)
+	mux.HandleFunc("GET /api/report-artifacts/", a.reportArtifactDownload)
+	mux.HandleFunc("GET /api/coc-packages/", a.cocPackageDownload)
+	mux.HandleFunc("POST /api/samples/", a.sampleAction)
+	mux.HandleFunc("POST /api/worksheets", a.createWorksheet)
+	mux.HandleFunc("POST /api/worksheets/", a.routeWorksheetMutation)
+	mux.HandleFunc("POST /api/catalog/departments", a.createCatalogDepartment)
+	mux.HandleFunc("POST /api/catalog/units", a.createCatalogUnit)
+	mux.HandleFunc("POST /api/catalog/methods", a.createCatalogMethod)
+	mux.HandleFunc("POST /api/catalog/analytes", a.createCatalogAnalyte)
+	mux.HandleFunc("POST /api/catalog/services", a.createAnalysisService)
+	mux.HandleFunc("POST /api/catalog/profiles", a.createAnalysisProfile)
+	mux.HandleFunc("POST /api/sample-reference", a.createSampleReferenceItem)
+	mux.HandleFunc("POST /api/sample-reference/", a.updateSampleReferenceItem)
+	mux.HandleFunc("DELETE /api/sample-reference/", a.deleteSampleReferenceItem)
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+	return mux
 }
 
 func auditVerify(args []string, stdout, stderr io.Writer) error {
@@ -492,6 +499,7 @@ func (a *app) pageData(scope lab.Scope, auditLimit int) pageData {
 		ClientDefaults:              a.store.AllClientDefaultsForScope(scope),
 		Samples:                     a.store.SamplesForScope(scope),
 		Results:                     a.store.ResultsForScope(scope),
+		ReportReadiness:             a.store.ReportReleaseReadinessForScopeAll(scope),
 		Audit:                       audit,
 		Departments:                 a.store.CatalogDepartmentsForScope(scope),
 		Units:                       a.store.CatalogUnitsForScope(scope),
@@ -819,6 +827,26 @@ func (a *app) sampleAction(w http.ResponseWriter, r *http.Request) {
 		a.generateCOCPackage(w, r)
 		return
 	}
+	if strings.HasSuffix(r.URL.Path, "/report-preview") {
+		a.previewReportArtifact(w, r)
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/report-release") {
+		a.releaseReportArtifact(w, r)
+		return
+	}
+	http.NotFound(w, r)
+}
+
+func (a *app) sampleDownloadAction(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(r.URL.Path, "/label-artifact") {
+		a.sampleLabelArtifact(w, r)
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/report-preview") {
+		a.previewReportArtifact(w, r)
+		return
+	}
 	http.NotFound(w, r)
 }
 
@@ -919,6 +947,117 @@ func (a *app) generateCOCPackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+}
+
+func (a *app) previewReportArtifact(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/report-preview") {
+		http.NotFound(w, r)
+		return
+	}
+	sampleID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/samples/"), "/report-preview")
+	if sampleID == "" || strings.Contains(sampleID, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	artifact, err := a.store.PreviewCOAArtifactForScope(scopeFromRequest(r), lab.COAGenerationInput{SampleID: sampleID, Template: defaultCOATemplateFromRequest(r)})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", artifact.Format)
+	w.Header().Set("X-Project-Scientist-Preview", "true")
+	_, _ = w.Write(artifact.Content)
+}
+
+func (a *app) releaseReportArtifact(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasSuffix(r.URL.Path, "/report-release") {
+		http.NotFound(w, r)
+		return
+	}
+	sampleID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/samples/"), "/report-release")
+	if sampleID == "" || strings.Contains(sampleID, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	released, err := a.store.GenerateCOAReportArtifactForScope(scopeFromRequest(r), lab.COAGenerationInput{SampleID: sampleID, Template: defaultCOATemplateFromRequest(r)}, actor(r))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, lab.ErrAuthorizationDenied) {
+			status = http.StatusForbidden
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	if wantsJSON(r) {
+		writeJSON(w, released, http.StatusCreated)
+		return
+	}
+	http.Redirect(w, r, scopedHome(scopeFromRequest(r))+"#report-release", http.StatusSeeOther)
+}
+
+func defaultCOATemplateFromRequest(r *http.Request) lab.COATemplate {
+	_ = r.ParseForm()
+	templateID := strings.TrimSpace(r.FormValue("template_id"))
+	if templateID == "" {
+		templateID = "coa-standard"
+	}
+	templateVersion := strings.TrimSpace(r.FormValue("template_version"))
+	if templateVersion == "" {
+		templateVersion = "2026.06"
+	}
+	labName := strings.TrimSpace(r.FormValue("lab_name"))
+	if labName == "" {
+		labName = "Clearline Demo Lab"
+	}
+	clientName := strings.TrimSpace(r.FormValue("client_name"))
+	if clientName == "" {
+		clientName = "Synthetic Client"
+	}
+	return lab.COATemplate{ID: templateID, Version: templateVersion, Style: lab.COAStyleCENLA, LabName: labName, ClientName: clientName}
+}
+
+func (a *app) reportArtifactDownload(w http.ResponseWriter, r *http.Request) {
+	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/report-artifacts/"), "/")
+	if id == "" || strings.Contains(id, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	artifact, ok := a.store.ReportArtifactForScope(scopeFromRequest(r), id)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	contentType := artifact.Format
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", artifact.ID+".txt"))
+	_, _ = w.Write(artifact.Content)
+}
+
+func (a *app) cocPackageDownload(w http.ResponseWriter, r *http.Request) {
+	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/coc-packages/"), "/")
+	if id == "" || strings.Contains(id, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	pkg, ok := a.store.COCPackageForScope(scopeFromRequest(r), id)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	contentType := pkg.PackageFormat
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", pkg.ID+".json"))
+	_, _ = w.Write(pkg.Content)
 }
 
 func cocPackageAttachmentsFromRequest(r *http.Request) []lab.ReportPackageAttachmentInput {
