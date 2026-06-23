@@ -28,6 +28,9 @@ jobs:
           make test
           make vet
 
+      - name: Backup/restore proof
+        run: make backup-restore-proof
+
       - name: Compose config
         run: docker compose config --quiet
 
