@@ -82,6 +82,7 @@ Needed:
 - Calculations and derived results.
 - Instrument/manual import hooks.
 - Review queue and analyst/reviewer separation rules.
+  - Lab-test v1: result rows support entered -> accepted/rejected review states, reviewer-separation enforcement when configured, lockout for post-review edits, explicit reopen/amend path, and audit events for create/update/review/reopen/denied attempts.
 
 ### 6. QC and batch acceptance
 
