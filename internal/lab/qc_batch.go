@@ -2,6 +2,7 @@ package lab
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,6 +32,7 @@ type QCBatch struct {
 	Matrix         string           `json:"matrix,omitempty"`
 	Status         QCBatchStatus    `json:"status"`
 	DecisionReason string           `json:"decision_reason,omitempty"`
+	Checks         []string         `json:"checks,omitempty"`
 	Notes          string           `json:"notes,omitempty"`
 	Items          []QCItem         `json:"items,omitempty"`
 	Relationships  []QCRelationship `json:"relationships,omitempty"`
@@ -64,10 +66,11 @@ type QCRelationship struct {
 }
 
 type CreateQCBatchInput struct {
-	Name     string `json:"name"`
-	MethodID string `json:"method_id"`
-	Matrix   string `json:"matrix"`
-	Notes    string `json:"notes"`
+	Name     string   `json:"name"`
+	MethodID string   `json:"method_id"`
+	Matrix   string   `json:"matrix"`
+	Checks   []string `json:"checks"`
+	Notes    string   `json:"notes"`
 }
 
 type CreateQCItemInput struct {
@@ -100,6 +103,7 @@ func (s *Store) CreateQCBatchForScope(scope Scope, input CreateQCBatchInput, act
 	input.Name = strings.TrimSpace(input.Name)
 	input.MethodID = strings.TrimSpace(input.MethodID)
 	input.Matrix = strings.TrimSpace(input.Matrix)
+	input.Checks = normalizeStrings(input.Checks)
 	input.Notes = strings.TrimSpace(input.Notes)
 	if input.Name == "" {
 		return QCBatch{}, errors.New("QC batch name is required")
@@ -125,11 +129,15 @@ func (s *Store) CreateQCBatchForScope(scope Scope, input CreateQCBatchInput, act
 			return err
 		}
 		now := time.Now().UTC()
-		batch = QCBatch{ID: fmt.Sprintf("QCB-%06d", next), TenantID: scope.TenantID, LabID: scope.LabID, Name: input.Name, MethodID: input.MethodID, Matrix: input.Matrix, Status: QCBatchStatusOpen, Notes: input.Notes, CreatedAt: now, UpdatedAt: now}
-		if _, err := tx.Exec(`INSERT INTO qc_batches(id, tenant_id, lab_id, name, method_id, matrix, status, decision_reason, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, batch.ID, batch.TenantID, batch.LabID, batch.Name, batch.MethodID, batch.Matrix, string(batch.Status), batch.DecisionReason, batch.Notes, formatTime(batch.CreatedAt), formatTime(batch.UpdatedAt)); err != nil {
+		batch = QCBatch{ID: fmt.Sprintf("QCB-%06d", next), TenantID: scope.TenantID, LabID: scope.LabID, Name: input.Name, MethodID: input.MethodID, Matrix: input.Matrix, Status: QCBatchStatusOpen, Checks: input.Checks, Notes: input.Notes, CreatedAt: now, UpdatedAt: now}
+		checksJSON, err := json.Marshal(batch.Checks)
+		if err != nil {
 			return err
 		}
-		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "qc_batch.created", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "qc_batch", ID: batch.ID}, Details: map[string]any{"method_id": batch.MethodID, "matrix": batch.Matrix, "status": string(batch.Status)}})
+		if _, err := tx.Exec(`INSERT INTO qc_batches(id, tenant_id, lab_id, name, method_id, matrix, status, decision_reason, checks_json, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, batch.ID, batch.TenantID, batch.LabID, batch.Name, batch.MethodID, batch.Matrix, string(batch.Status), batch.DecisionReason, string(checksJSON), batch.Notes, formatTime(batch.CreatedAt), formatTime(batch.UpdatedAt)); err != nil {
+			return err
+		}
+		return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "qc_batch.created", Outcome: AuditOutcomeAllowed, Resource: AuditResource{Type: "qc_batch", ID: batch.ID}, Details: map[string]any{"method_id": batch.MethodID, "matrix": batch.Matrix, "status": string(batch.Status), "checks": batch.Checks}})
 	})
 	if txErr != nil {
 		return QCBatch{}, txErr
@@ -514,17 +522,26 @@ type rowQueryer interface {
 
 func qcBatchByIDTx(q rowQueryer, scope Scope, id string) (QCBatch, error) {
 	var batch QCBatch
-	var status, created, updated string
-	if err := q.QueryRow(`SELECT id, tenant_id, lab_id, name, method_id, matrix, status, decision_reason, notes, created_at, updated_at FROM qc_batches WHERE id = ? AND tenant_id = ? AND lab_id = ?`, strings.TrimSpace(id), scope.TenantID, scope.LabID).Scan(&batch.ID, &batch.TenantID, &batch.LabID, &batch.Name, &batch.MethodID, &batch.Matrix, &status, &batch.DecisionReason, &batch.Notes, &created, &updated); err != nil {
+	var status, checksJSON, created, updated string
+	if err := q.QueryRow(`SELECT id, tenant_id, lab_id, name, method_id, matrix, status, decision_reason, checks_json, notes, created_at, updated_at FROM qc_batches WHERE id = ? AND tenant_id = ? AND lab_id = ?`, strings.TrimSpace(id), scope.TenantID, scope.LabID).Scan(&batch.ID, &batch.TenantID, &batch.LabID, &batch.Name, &batch.MethodID, &batch.Matrix, &status, &batch.DecisionReason, &checksJSON, &batch.Notes, &created, &updated); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return QCBatch{}, fmt.Errorf("unknown QC batch %q", id)
 		}
 		return QCBatch{}, err
 	}
 	batch.Status = QCBatchStatus(status)
+	batch.Checks = decodeQCChecks(checksJSON)
 	batch.CreatedAt, _ = parseTime(created)
 	batch.UpdatedAt, _ = parseTime(updated)
 	return batch, nil
+}
+
+func decodeQCChecks(raw string) []string {
+	var checks []string
+	if err := json.Unmarshal([]byte(raw), &checks); err != nil {
+		return nil
+	}
+	return normalizeStrings(checks)
 }
 
 func qcItemByIDTx(q rowQueryer, scope Scope, id string) (QCItem, error) {

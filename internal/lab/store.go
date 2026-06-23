@@ -535,6 +535,7 @@ var sqliteMigrations = []string{
 		matrix TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL CHECK (status IN ('open','in_review','accepted','rejected')),
 		decision_reason TEXT NOT NULL DEFAULT '',
+		checks_json TEXT NOT NULL DEFAULT '[]',
 		notes TEXT NOT NULL DEFAULT '',
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
@@ -866,6 +867,16 @@ func (s *Store) migrateV1AuditSchema(ctx context.Context) error {
 	}
 	if !reportSnapshotColumns["release_signature"] {
 		if _, err := s.db.ExecContext(ctx, `ALTER TABLE report_snapshots ADD COLUMN release_signature TEXT NOT NULL DEFAULT 'legacy release signature'`); err != nil {
+			return err
+		}
+	}
+
+	qcBatchColumns, err := tableColumns(ctx, s.db, "qc_batches")
+	if err != nil {
+		return err
+	}
+	if !qcBatchColumns["checks_json"] {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE qc_batches ADD COLUMN checks_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
 			return err
 		}
 	}
