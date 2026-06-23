@@ -40,6 +40,8 @@ type pageData struct {
 	PageTitle                   string
 	PageDescription             string
 	DemoResetEnabled            bool
+	GuidedWorkflow              guidedWorkflowView
+	FocusedSampleID             string
 	Clients                     []lab.Client
 	Sites                       []lab.Site
 	Contacts                    []lab.Contact
@@ -64,6 +66,21 @@ type pageData struct {
 	PreservativeReferences      []lab.SampleReferenceItem
 	StorageLocationReferences   []lab.SampleReferenceItem
 	ReceivedConditionReferences []lab.SampleReferenceItem
+}
+
+type guidedWorkflowView struct {
+	HasSample       bool
+	Sample          lab.Sample
+	ClientName      string
+	Lines           []lab.AnalysisRequestLine
+	Results         []lab.Result
+	Readiness       lab.ReportReleaseReadiness
+	HasReadiness    bool
+	ResultCount     int
+	EnteredCount    int
+	AcceptedCount   int
+	CurrentStep     int
+	ProgressPercent int
 }
 
 func main() {
@@ -719,7 +736,7 @@ func (a *app) index(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	data := a.pageData(scope, 20, actor)
+	data := a.pageData(scope, 20, actor, r.URL.Query().Get("sample_id"))
 	data.ActivePage = activePage
 	data.PageTitle = title
 	data.PageDescription = description
@@ -754,25 +771,32 @@ func (a *app) apiState(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, a.pageData(scope, 50, actor), http.StatusOK)
+	writeJSON(w, a.pageData(scope, 50, actor, r.URL.Query().Get("sample_id")), http.StatusOK)
 }
 
-func (a *app) pageData(scope lab.Scope, auditLimit int, actor lab.ActorContext) pageData {
+func (a *app) pageData(scope lab.Scope, auditLimit int, actor lab.ActorContext, focusedSampleID string) pageData {
 	audit, _ := a.store.AuditEventsForScopeAsActor(scope, auditLimit, actor)
 	references := a.store.AllSampleReferenceItemsForScope(scope)
+	clients := a.store.ClientsForScope(scope)
+	samples := a.store.SamplesForScope(scope)
+	results := a.store.ResultsForScope(scope)
+	readiness := a.store.ReportReleaseReadinessForScopeAll(scope)
+	lines := a.store.AnalysisRequestLinesForScope(scope)
 	return pageData{
 		Scope:                       scope,
 		CSRFToken:                   a.csrfTokenForRequest(scope, actor),
 		DemoResetEnabled:            a.demoResetEnabled,
-		Clients:                     a.store.ClientsForScope(scope),
+		FocusedSampleID:             strings.TrimSpace(focusedSampleID),
+		GuidedWorkflow:              guidedWorkflowForDemoSample(samples, clients, lines, results, readiness),
+		Clients:                     clients,
 		Sites:                       a.store.SitesForScope(scope),
 		Contacts:                    a.store.ContactsForScope(scope),
 		ContactRoles:                a.store.ContactRolesForScope(scope),
 		Projects:                    a.store.ProjectsForScope(scope),
 		ClientDefaults:              a.store.AllClientDefaultsForScope(scope),
-		Samples:                     a.store.SamplesForScope(scope),
-		Results:                     a.store.ResultsForScope(scope),
-		ReportReadiness:             a.store.ReportReleaseReadinessForScopeAll(scope),
+		Samples:                     samples,
+		Results:                     results,
+		ReportReadiness:             readiness,
 		Audit:                       audit,
 		Departments:                 a.store.CatalogDepartmentsForScope(scope),
 		Units:                       a.store.CatalogUnitsForScope(scope),
@@ -780,7 +804,7 @@ func (a *app) pageData(scope lab.Scope, auditLimit int, actor lab.ActorContext) 
 		Analytes:                    a.store.CatalogAnalytesForScope(scope),
 		Services:                    a.store.AnalysisServicesForScope(scope),
 		Profiles:                    a.store.AnalysisProfilesForScope(scope),
-		AnalysisRequestLines:        a.store.AnalysisRequestLinesForScope(scope),
+		AnalysisRequestLines:        lines,
 		Worksheets:                  a.store.WorksheetsForScope(scope),
 		SampleReference:             references,
 		MatrixReferences:            sampleReferencesByKind(references, lab.SampleReferenceMatrix),
@@ -799,6 +823,68 @@ func sampleReferencesByKind(items []lab.SampleReferenceItem, kind lab.SampleRefe
 		}
 	}
 	return filtered
+}
+
+func guidedWorkflowForDemoSample(samples []lab.Sample, clients []lab.Client, lines []lab.AnalysisRequestLine, results []lab.Result, readiness []lab.ReportReleaseReadiness) guidedWorkflowView {
+	view := guidedWorkflowView{CurrentStep: 1}
+	for _, sample := range samples {
+		if sample.ID == "S-000001" {
+			view.Sample = sample
+			view.HasSample = true
+			break
+		}
+	}
+	if !view.HasSample {
+		return view
+	}
+	for _, client := range clients {
+		if client.ID == view.Sample.ClientID {
+			view.ClientName = client.Name
+			break
+		}
+	}
+	for _, line := range lines {
+		if line.SampleID == view.Sample.ID {
+			view.Lines = append(view.Lines, line)
+		}
+	}
+	for _, result := range results {
+		if result.SampleID != view.Sample.ID {
+			continue
+		}
+		view.Results = append(view.Results, result)
+		if result.Status == lab.ResultStatusEntered || result.Status == lab.ResultStatusAccepted {
+			view.EnteredCount++
+		}
+		if result.Status == lab.ResultStatusAccepted {
+			view.AcceptedCount++
+		}
+	}
+	view.ResultCount = len(view.Lines)
+	for _, item := range readiness {
+		if item.SampleID == view.Sample.ID {
+			view.Readiness = item
+			view.HasReadiness = true
+			if item.ResultCount > view.ResultCount {
+				view.ResultCount = item.ResultCount
+			}
+			break
+		}
+	}
+	view.CurrentStep = 2
+	if view.ResultCount > 0 && view.EnteredCount >= view.ResultCount {
+		view.CurrentStep = 3
+	}
+	if view.ResultCount > 0 && view.AcceptedCount >= view.ResultCount {
+		view.CurrentStep = 4
+	}
+	if view.HasReadiness && view.Readiness.CurrentArtifactID != "" {
+		view.CurrentStep = 4
+		view.ProgressPercent = 100
+		return view
+	}
+	view.ProgressPercent = (view.CurrentStep - 1) * 25
+	return view
 }
 
 func (a *app) demoReset(w http.ResponseWriter, r *http.Request) {
