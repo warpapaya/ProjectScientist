@@ -558,18 +558,18 @@ func (a *app) index(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scope := scopeFromRequest(r)
-	if err := a.tmpl.Execute(w, a.pageData(scope, 20)); err != nil {
+	if err := a.tmpl.Execute(w, a.pageData(scope, 20, actor(r))); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
 func (a *app) apiState(w http.ResponseWriter, r *http.Request) {
 	scope := scopeFromRequest(r)
-	writeJSON(w, a.pageData(scope, 50), http.StatusOK)
+	writeJSON(w, a.pageData(scope, 50, actor(r)), http.StatusOK)
 }
 
-func (a *app) pageData(scope lab.Scope, auditLimit int) pageData {
-	audit, _ := a.store.AuditEventsForScope(scope, auditLimit)
+func (a *app) pageData(scope lab.Scope, auditLimit int, actor lab.ActorContext) pageData {
+	audit, _ := a.store.AuditEventsForScopeAsActor(scope, auditLimit, actor)
 	references := a.store.AllSampleReferenceItemsForScope(scope)
 	return pageData{
 		Scope:                       scope,

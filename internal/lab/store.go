@@ -1291,6 +1291,31 @@ func (s *Store) AuditEventsForScope(scope Scope, limit int) ([]AuditEvent, error
 	if err != nil {
 		return nil, err
 	}
+	return s.auditEventsForScopeLocked(scope, limit)
+}
+
+func (s *Store) AuditEventsForScopeAsActor(scope Scope, limit int, actor ActorContext) ([]AuditEvent, error) {
+	return s.authorizedAuditEventsForScope(scope, limit, actor, OperationAuditView, AuditResource{Type: "audit", ID: "events"})
+}
+
+func (s *Store) AuditExportEventsForScopeAsActor(scope Scope, limit int, actor ActorContext) ([]AuditEvent, error) {
+	return s.authorizedAuditEventsForScope(scope, limit, actor, OperationAuditExport, AuditResource{Type: "audit_export", ID: "events"})
+}
+
+func (s *Store) authorizedAuditEventsForScope(scope Scope, limit int, actor ActorContext, operation Operation, resource AuditResource) ([]AuditEvent, error) {
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.AuthorizeOperationForScope(scope, operation, actor, resource, map[string]any{"limit": limit}); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.auditEventsForScopeLocked(scope, limit)
+}
+
+func (s *Store) auditEventsForScopeLocked(scope Scope, limit int) ([]AuditEvent, error) {
 	where := fmt.Sprintf("WHERE tenant_id = %q AND lab_id = %q", sqlQuote(scope.TenantID), sqlQuote(scope.LabID))
 	return auditEventsQuery(s.db, where, limit)
 }
