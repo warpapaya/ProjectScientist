@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -112,8 +113,13 @@ func run(args []string, stdout, stderr io.Writer) error {
 			return customerWorkflowSmokeMatrix(args[3:], stdout, stderr)
 		}
 	case "smoke":
-		if len(args) >= 3 && args[2] == "performance" {
-			return smokePerformance(args[3:], stdout, stderr)
+		if len(args) >= 3 {
+			switch args[2] {
+			case "performance":
+				return smokePerformance(args[3:], stdout, stderr)
+			case "prospect-trial":
+				return smokeProspectTrial(args[3:], stdout, stderr)
+			}
 		}
 		return smokeHTTP(args[2:], stdout, stderr)
 	}
@@ -524,6 +530,138 @@ func customerWorkflowSmokeMatrix(args []string, stdout, stderr io.Writer) error 
 	}
 	fmt.Fprintf(stdout, "customer workflow smoke-matrix ok lanes=%d green=%d yellow=%d red=%d matrix=%s\n", len(matrix.Lanes), matrix.StatusCounts[lab.SmokeStatusGreen], matrix.StatusCounts[lab.SmokeStatusYellow], matrix.StatusCounts[lab.SmokeStatusRed], matrix.MatrixArtifactPath)
 	return nil
+}
+
+func smokeProspectTrial(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("smoke prospect-trial", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	baseURL := fs.String("base-url", getenv("DEV_BASE_URL", "http://127.0.0.1:8097"), "running local Project Scientist base URL")
+	username := fs.String("username", getenv("PSC_INTERNAL_SESSION_USER", "lab-dev"), "local dev username")
+	password := fs.String("password", configuredLoginPassword(), "local dev password")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	base := strings.TrimRight(*baseURL, "/")
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return err
+	}
+	client := http.Client{Timeout: 10 * time.Second, Jar: jar}
+	if err := expectHTTP(&client, base+"/healthz", "ok"); err != nil {
+		return fmt.Errorf("health check: %w", err)
+	}
+	if err := expectHTTP(&client, base+"/login", "Sign in to the lab workspace"); err != nil {
+		return fmt.Errorf("login page: %w", err)
+	}
+	form := url.Values{}
+	form.Set("username", *username)
+	form.Set("password", *password)
+	loginReq, err := http.NewRequest(http.MethodPost, base+"/login", strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	loginResp, err := client.Do(loginReq)
+	if err != nil {
+		return fmt.Errorf("login request: %w", err)
+	}
+	loginBody, err := readHTTPBody(loginResp)
+	if err != nil {
+		return err
+	}
+	if loginResp.StatusCode < 200 || loginResp.StatusCode >= 300 {
+		return fmt.Errorf("login returned %s: %s", loginResp.Status, strings.TrimSpace(loginBody))
+	}
+	for _, want := range []string{"Dashboard", `href="/samples"`, `aria-label="Primary navigation"`} {
+		if !strings.Contains(loginBody, want) {
+			return fmt.Errorf("post-login dashboard missing %q", want)
+		}
+	}
+	csrf, err := csrfTokenFromJar(jar, base)
+	if err != nil {
+		return err
+	}
+	resetReq, err := http.NewRequest(http.MethodPost, base+"/api/demo/reset", nil)
+	if err != nil {
+		return err
+	}
+	resetReq.Header.Set("Accept", "application/json")
+	resetReq.Header.Set(csrfHeaderName, csrf)
+	resetResp, err := client.Do(resetReq)
+	if err != nil {
+		return fmt.Errorf("demo reset request: %w", err)
+	}
+	resetBody, err := readHTTPBody(resetResp)
+	if err != nil {
+		return err
+	}
+	if resetResp.StatusCode < 200 || resetResp.StatusCode >= 300 {
+		return fmt.Errorf("demo reset returned %s: %s", resetResp.Status, strings.TrimSpace(resetBody))
+	}
+	for _, want := range []string{"Okefenokee Synthetic Water Authority", "S-000001"} {
+		if !strings.Contains(resetBody, want) {
+			return fmt.Errorf("demo reset response missing %q: %s", want, strings.TrimSpace(resetBody))
+		}
+	}
+	checks := []struct {
+		path string
+		want []string
+	}{
+		{"/dashboard", []string{`href="/dashboard" aria-current="page"`, "Active samples", "Load a realistic lab workspace"}},
+		{"/samples", []string{`href="/samples" aria-current="page"`, "S-000001", "Okefenokee Synthetic Water Authority", `id="workflow-board"`}},
+		{"/results", []string{`href="/results" aria-current="page"`, "Result entry grid", "Review/release queue"}},
+		{"/reports", []string{`href="/reports" aria-current="page"`, "Report release desk", "Preview COA"}},
+	}
+	for _, check := range checks {
+		body, err := getHTTPBody(&client, base+check.path)
+		if err != nil {
+			return fmt.Errorf("%s: %w", check.path, err)
+		}
+		for _, want := range check.want {
+			if !strings.Contains(body, want) {
+				return fmt.Errorf("%s missing %q", check.path, want)
+			}
+		}
+	}
+	fmt.Fprintf(stdout, "prospect trial smoke ok base_url=%s routes=login,dashboard,samples,results,reports seeded_sample=S-000001\n", base)
+	return nil
+}
+
+func readHTTPBody(res *http.Response) (string, error) {
+	defer res.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+func getHTTPBody(client *http.Client, url string) (string, error) {
+	res, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	body, err := readHTTPBody(res)
+	if err != nil {
+		return "", err
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return "", fmt.Errorf("returned %s: %s", res.Status, strings.TrimSpace(body))
+	}
+	return body, nil
+}
+
+func csrfTokenFromJar(jar http.CookieJar, base string) (string, error) {
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	for _, cookie := range jar.Cookies(parsed) {
+		if cookie.Name == sessionCookieName && strings.TrimSpace(cookie.Value) != "" {
+			return deriveCSRFToken(cookie.Value), nil
+		}
+	}
+	return "", fmt.Errorf("%s cookie was not set by login", sessionCookieName)
 }
 
 func smokeHTTP(args []string, stdout, stderr io.Writer) error {

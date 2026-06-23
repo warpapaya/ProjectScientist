@@ -1,4 +1,4 @@
-.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke performance-concurrency-smoke backup-restore-proof image-review dev-up dev-down dev-clean-projects dev-clean-by-name dev-reset dev-seed demo-reset mvp-vertical-slice mvp-verify-suite
+.PHONY: test vet fmt-check ci docker-test docker-build docker-smoke prospect-trial-smoke performance-concurrency-smoke backup-restore-proof image-review dev-up dev-down dev-clean-projects dev-clean-by-name dev-reset dev-seed demo-reset mvp-vertical-slice mvp-verify-suite
 
 WORKTREE_SLUG ?= $(shell basename "$$(pwd)" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]_.-' '-' | sed 's/^-//;s/-$$//')
 COMPOSE_PROJECT_NAME ?= project-scientist-$(WORKTREE_SLUG)
@@ -60,6 +60,10 @@ docker-smoke:
 		$(COMPOSE_SMOKE_RUN) exec -T project-scientist /app/project-scientist mvp vertical-slice --db /data/project-scientist-mvp.db | grep -q 'mvp vertical-slice ok'; \
 		$(COMPOSE_SMOKE_RUN) exec -T project-scientist /app/project-scientist mvp verify-suite --db /data/project-scientist-mvp-suite.db --artifacts /tmp/mvp-verification | grep -q 'mvp verify-suite ok'; \
 		printf 'docker smoke ok\n'
+
+prospect-trial-smoke: dev-up
+	@go run ./cmd/project-scientist smoke prospect-trial --base-url $(DEV_BASE_URL)
+
 
 performance-concurrency-smoke:
 	@./scripts/performance-concurrency-smoke.sh --json
