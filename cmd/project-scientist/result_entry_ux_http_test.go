@@ -51,7 +51,7 @@ func TestResultEntryGridAndReviewDeskExposeKeyboardFriendlyWorkflow(t *testing.T
 		"name=\"analysis_request_line_id\" value=\"" + lines[1].ID + "\"",
 		"autofocus",
 		"id=\"result-review\"",
-		"Review/release queue",
+		"Review queue",
 		"action=\"/api/results/R-000001/review\"",
 		"name=\"decision\" value=\"accept\"",
 		"href=\"#report-release\"",

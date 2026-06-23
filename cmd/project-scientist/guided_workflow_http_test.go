@@ -22,12 +22,12 @@ func TestDashboardGuidedWorkflowRailShowsDemoResetEmptyState(t *testing.T) {
 	body := renderIndexForPath(t, application, "/dashboard")
 	assertContainsAll(t, body, []string{
 		`data-testid="guided-workflow-rail"`,
-		`Guided lab workflow`,
-		`Run the local demo sample from receipt to report preview.`,
+		`One sample, end to end`,
+		`Use the guided path to see how a lab moves a synthetic sample`,
 		`data-testid="workflow-progress"`,
-		`No demo workspace loaded yet.`,
+		`No synthetic demo sample loaded yet.`,
 		`data-testid="demo-empty-state"`,
-		`Load demo workspace`,
+		`Load synthetic demo`,
 	})
 }
 
@@ -45,7 +45,7 @@ func TestDashboardGuidedWorkflowRailReflectsSeededSample(t *testing.T) {
 		`data-testid="workflow-step-report"`,
 		`data-testid="workflow-progress"`,
 		`S-000001`,
-		`Step 2 of 4`,
+		`1 of 4 workflow milestones complete`,
 		`href="/samples"`,
 		`href="/results?sample_id=S-000001"`,
 		`href="/results?sample_id=S-000001#result-review"`,
@@ -79,8 +79,8 @@ func TestResultsGuidedWorkItemShowsEntryAndReviewProgress(t *testing.T) {
 	body := renderIndexForPath(t, application, "/results?sample_id=S-000001")
 	assertContainsAll(t, body, []string{
 		`data-testid="result-work-item"`,
-		`Results for S-000001`,
-		`4 analyses requested`,
+		`Enter results for S-000001`,
+		`4 requested analyses are ready for entry`,
 		`data-testid="result-entry-grid"`,
 		`data-testid="result-row-ARL-000001"`,
 		`data-testid="save-result-ARL-000001"`,
@@ -88,7 +88,7 @@ func TestResultsGuidedWorkItemShowsEntryAndReviewProgress(t *testing.T) {
 		`0/4 results entered`,
 		`data-testid="guided-review-panel"`,
 		`data-testid="review-empty-state"`,
-		`No entered results ready for review.`,
+		`No entered results are ready for review.`,
 	})
 }
 

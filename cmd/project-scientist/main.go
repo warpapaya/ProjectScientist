@@ -39,6 +39,7 @@ type pageData struct {
 	ActivePage                  string
 	PageTitle                   string
 	PageDescription             string
+	PageEyebrow                 string
 	DemoResetEnabled            bool
 	GuidedWorkflow              guidedWorkflowView
 	FocusedSampleID             string
@@ -69,18 +70,20 @@ type pageData struct {
 }
 
 type guidedWorkflowView struct {
-	HasSample       bool
-	Sample          lab.Sample
-	ClientName      string
-	Lines           []lab.AnalysisRequestLine
-	Results         []lab.Result
-	Readiness       lab.ReportReleaseReadiness
-	HasReadiness    bool
-	ResultCount     int
-	EnteredCount    int
-	AcceptedCount   int
-	CurrentStep     int
-	ProgressPercent int
+	HasSample           bool
+	Sample              lab.Sample
+	ClientName          string
+	Lines               []lab.AnalysisRequestLine
+	Results             []lab.Result
+	Readiness           lab.ReportReleaseReadiness
+	HasReadiness        bool
+	ResultCount         int
+	EnteredCount        int
+	AcceptedCount       int
+	CurrentStep         int
+	CompletedMilestones int
+	CurrentStepLabel    string
+	ProgressPercent     int
 }
 
 func main() {
@@ -567,7 +570,7 @@ func smokeProspectTrial(args []string, stdout, stderr io.Writer) error {
 	if err := expectHTTP(&client, base+"/healthz", "ok"); err != nil {
 		return fmt.Errorf("health check: %w", err)
 	}
-	if err := expectHTTP(&client, base+"/login", "Sign in to the lab workspace"); err != nil {
+	if err := expectHTTP(&client, base+"/login", "Sign in to the Project Scientist demo workspace"); err != nil {
 		return fmt.Errorf("login page: %w", err)
 	}
 	form := url.Values{}
@@ -624,10 +627,10 @@ func smokeProspectTrial(args []string, stdout, stderr io.Writer) error {
 		path string
 		want []string
 	}{
-		{"/dashboard", []string{`href="/dashboard" aria-current="page"`, "Active samples", "Load a realistic lab workspace"}},
+		{"/dashboard", []string{`href="/dashboard" aria-current="page"`, "Active samples", "Load the demo lab workspace"}},
 		{"/samples", []string{`href="/samples" aria-current="page"`, "S-000001", "Okefenokee Synthetic Water Authority", `id="workflow-board"`}},
-		{"/results", []string{`href="/results" aria-current="page"`, "Result entry grid", "Review/release queue"}},
-		{"/reports", []string{`href="/reports" aria-current="page"`, "Report release desk", "Preview COA"}},
+		{"/results", []string{`href="/results" aria-current="page"`, "Result entry grid", "Review queue"}},
+		{"/reports", []string{`href="/reports" aria-current="page"`, "Report readiness desk", "Preview COA"}},
 	}
 	for _, check := range checks {
 		body, err := getHTTPBody(&client, base+check.path)
@@ -740,6 +743,7 @@ func (a *app) index(w http.ResponseWriter, r *http.Request) {
 	data.ActivePage = activePage
 	data.PageTitle = title
 	data.PageDescription = description
+	data.PageEyebrow = pageEyebrow(activePage)
 	if err := a.tmpl.Execute(w, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -750,19 +754,38 @@ func productionPageForPath(path string) (activePage string, title string, descri
 	case "/":
 		return "all", "Lab operations cockpit", "Run samples from intake to release without losing the audit trail.", true
 	case "/dashboard":
-		return "dashboard", "Dashboard", "Operational overview for today’s lab work.", true
+		return "dashboard", "Demo workflow dashboard", "Follow one synthetic sample from receipt through result entry, review, release checks, and report preview.", true
 	case "/samples":
-		return "samples", "Samples", "Receive samples, track custody, and move work through legal workflow transitions.", true
+		return "samples", "Sample workflow", "Receive a synthetic sample, review custody evidence, print labels, and move the sample through allowed workflow states.", true
 	case "/results":
-		return "results", "Results", "Build worksheets, enter results, and run technical review without mixing setup screens into the workbench.", true
+		return "results", "Results and review", "Enter results for requested analyses, then review accepted values before report release checks.", true
 	case "/reports":
-		return "reports", "Reports", "Review blockers, preview COAs, release reports, and download custody packages.", true
+		return "reports", "Report readiness", "See what is blocking release, preview the synthetic COA, and download custody/report packages for the demo sample.", true
 	case "/admin":
-		return "admin", "Administration", "Maintain clients, contacts, catalog, and controlled vocabulary away from the daily operations flow.", true
+		return "admin", "Demo setup", "Review the clients, contacts, catalog, methods, and controlled vocabulary used by the synthetic workflow.", true
 	case "/audit":
-		return "audit", "Audit trail", "Inspect immutable workflow events and evidence hashes.", true
+		return "audit", "Audit trail", "Review append-only evidence for demo workflow events, including state changes, result entry, review, report package generation, and hashes.", true
 	default:
 		return "", "", "", false
+	}
+}
+
+func pageEyebrow(activePage string) string {
+	switch activePage {
+	case "dashboard":
+		return "Overview"
+	case "samples":
+		return "Sample workflow"
+	case "results":
+		return "Result entry"
+	case "reports":
+		return "Reporting"
+	case "admin":
+		return "Setup"
+	case "audit":
+		return "Evidence"
+	default:
+		return "Overview"
 	}
 }
 
@@ -880,11 +903,30 @@ func guidedWorkflowForDemoSample(samples []lab.Sample, clients []lab.Client, lin
 	}
 	if view.HasReadiness && view.Readiness.CurrentArtifactID != "" {
 		view.CurrentStep = 4
+		view.CompletedMilestones = 4
+		view.CurrentStepLabel = "Report preview"
 		view.ProgressPercent = 100
 		return view
 	}
-	view.ProgressPercent = (view.CurrentStep - 1) * 25
+	view.CompletedMilestones = view.CurrentStep - 1
+	view.ProgressPercent = view.CompletedMilestones * 25
+	view.CurrentStepLabel = guidedWorkflowStepLabel(view.CurrentStep)
 	return view
+}
+
+func guidedWorkflowStepLabel(step int) string {
+	switch step {
+	case 1:
+		return "Receive sample"
+	case 2:
+		return "Enter results"
+	case 3:
+		return "Review results"
+	case 4:
+		return "Preview report"
+	default:
+		return "Continue workflow"
+	}
 }
 
 func (a *app) demoReset(w http.ResponseWriter, r *http.Request) {
@@ -1801,8 +1843,8 @@ var loginTemplate = template.Must(template.New("login").Parse(`<!doctype html>
     <section class="login-card-wrap">
       <div class="login-brand">
         <p class="eyebrow">Project Scientist</p>
-        <h1>Sign in to the lab workspace</h1>
-        <p>Use the local dev account to evaluate the v0.1 SaaS workflow without manually injecting cookies.</p>
+        <h1>Sign in to the Project Scientist demo workspace</h1>
+        <p>Explore a synthetic lab workflow from sample receipt to report preview.</p>
       </div>
       <form class="login-card" method="post" action="/login">
         <h2>Welcome back</h2>
@@ -1810,7 +1852,7 @@ var loginTemplate = template.Must(template.New("login").Parse(`<!doctype html>
         <label><span>Username</span><input name="username" autocomplete="username" placeholder="lab-dev" required autofocus></label>
         <label><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
         <button>Sign in</button>
-        <p class="login-hint">Local default: <code>lab-dev</code> / <code>project-scientist-dev</code>. Override with <code>PSC_INTERNAL_SESSION_USER</code> and <code>PSC_INTERNAL_SESSION_PASSWORD</code>.</p>
+        <p class="login-hint">Demo credentials are prefilled in the local review runbook. Use synthetic data only.</p>
       </form>
     </section>
   </main>
