@@ -537,7 +537,29 @@ var sqliteMigrations = []string{
 		notes TEXT NOT NULL DEFAULT '',
 		created_at TEXT NOT NULL
 	);`,
-	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('next_analysis_request_line', '1'), ('next_sample_intake_template', '1'), ('next_qc_sample_relationship', '1'), ('next_custody_event', '1'), ('next_qc_batch', '1'), ('next_qc_item', '1'), ('next_qc_relationship', '1'), ('last_hash', '');`,
+	`CREATE TABLE IF NOT EXISTS qc_limit_rules (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		lab_id TEXT NOT NULL,
+		method_id TEXT NOT NULL REFERENCES catalog_methods(id),
+		matrix_key TEXT NOT NULL,
+		analyte_key TEXT NOT NULL,
+		matrix TEXT NOT NULL CHECK (length(trim(matrix)) > 0),
+		analyte TEXT NOT NULL CHECK (length(trim(analyte)) > 0),
+		unit TEXT NOT NULL DEFAULT '',
+		min_value REAL,
+		max_value REAL,
+		warn_low REAL,
+		warn_high REAL,
+		version INTEGER NOT NULL,
+		source TEXT NOT NULL CHECK (length(trim(source)) > 0),
+		notes TEXT NOT NULL DEFAULT '',
+		active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+		rule_hash TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		UNIQUE(tenant_id, lab_id, method_id, matrix_key, analyte_key, version)
+	);`,
+	`INSERT OR IGNORE INTO store_meta(key, value) VALUES ('next_client', '1'), ('next_sample', '1'), ('next_site', '1'), ('next_contact', '1'), ('next_contact_role', '1'), ('next_project', '1'), ('next_audit', '1'), ('next_catalog_department', '1'), ('next_catalog_unit', '1'), ('next_catalog_method', '1'), ('next_catalog_analyte', '1'), ('next_analysis_service', '1'), ('next_analysis_profile', '1'), ('next_sample_reference', '1'), ('next_catalog_snapshot', '1'), ('next_analysis_request_line', '1'), ('next_sample_intake_template', '1'), ('next_qc_sample_relationship', '1'), ('next_custody_event', '1'), ('next_qc_batch', '1'), ('next_qc_item', '1'), ('next_qc_relationship', '1'), ('next_qc_limit_rule', '1'), ('last_hash', '');`,
 	`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (6, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));`,
 }
 
@@ -569,6 +591,7 @@ var sqlitePostMigrationIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_qc_batches_scope_status ON qc_batches(tenant_id, lab_id, status, method_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_qc_items_scope_batch ON qc_items(tenant_id, lab_id, qc_batch_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_qc_relationships_scope_batch ON qc_relationships(tenant_id, lab_id, qc_batch_id);`,
+	`CREATE INDEX IF NOT EXISTS idx_qc_limit_rules_match ON qc_limit_rules(tenant_id, lab_id, method_id, matrix_key, analyte_key, active, version);`,
 }
 
 func OpenStore(statePath, _ string) (*Store, error) { return OpenSQLiteStore(statePath) }
