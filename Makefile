@@ -47,9 +47,10 @@ docker-smoke:
 		$(COMPOSE_SMOKE_RUN) up --build -d project-scientist; \
 		./scripts/wait-health.sh $(SMOKE_BASE_URL)/healthz; \
 		PSC_INTERNAL_SESSION_TOKEN="$(PSC_INTERNAL_SESSION_TOKEN)" ./scripts/dev-seed.sh $(SMOKE_BASE_URL); \
+		csrf_token="$$(printf '%s' "project-scientist-csrf-v1:$(PSC_INTERNAL_SESSION_TOKEN)" | shasum -a 256 | awk '{print $$1}')"; \
 		curl -fsS -H 'Cookie: psc_internal_session=$(PSC_INTERNAL_SESSION_TOKEN)' $(SMOKE_BASE_URL)/api/state | grep -q 'Okefenokee Synthetic Water Authority'; \
 		curl -fsS -H 'Cookie: psc_internal_session=$(PSC_INTERNAL_SESSION_TOKEN)' $(SMOKE_BASE_URL)/api/state | grep -q 'S-000001'; \
-		curl -fsS -H 'Accept: application/json' -H 'Cookie: psc_internal_session=$(PSC_INTERNAL_SESSION_TOKEN)' -X POST \
+		curl -fsS -H 'Accept: application/json' -H "X-PSC-CSRF-Token: $$csrf_token" -H 'Cookie: psc_internal_session=$(PSC_INTERNAL_SESSION_TOKEN)' -X POST \
 			-d tenant_id=lab-test -d lab_id=default-lab \
 			-d package_format=application/vnd.project-scientist.coc+json \
 			-d attachment_name=custody-history.json \

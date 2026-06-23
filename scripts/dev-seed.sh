@@ -7,10 +7,12 @@ if [ -z "$session_token" ]; then
   echo 'PSC_INTERNAL_SESSION_TOKEN is required for protected local demo reset; use make dev-seed/demo-reset or export a synthetic local token.' >&2
   exit 2
 fi
+csrf_token="${PSC_INTERNAL_CSRF_TOKEN:-$(printf '%s' "project-scientist-csrf-v1:$session_token" | shasum -a 256 | awk '{print $1}')}"
 
 summary="$(curl -fsS \
   -H 'Accept: application/json' \
   -H 'X-PSC-Request-ID: dev-demo-reset' \
+  -H "X-PSC-CSRF-Token: $csrf_token" \
   -H "Cookie: psc_internal_session=$session_token" \
   -X POST \
   "$base_url/api/demo/reset")"

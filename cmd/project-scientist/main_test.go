@@ -234,6 +234,7 @@ func TestDemoResetEndpointSeedsFixtureAndIsRerunnable(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/demo/reset", nil)
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("X-PSC-Request-ID", "demo-reset-test")
+		req.Header.Set(csrfHeaderName, app.sessions[defaultTestSessionToken].CSRFToken)
 		addDefaultSessionCookie(req)
 		rr := httptest.NewRecorder()
 
