@@ -1,0 +1,35 @@
+{
+  "artifact": "docs/review-evidence/psc-rm-084/private-staging-runbook/psc-rm-084-private-staging-runbook-planning-only.md",
+  "bytes": 13697,
+  "disposition": "planning-only; not executable; actual private reachable staging remains blocked pending concrete manifest/evidence bundle and named Aegis plus Petie/Friday go/no-go approvals",
+  "generated_utc": "2026-06-23T07:53:51Z",
+  "lines": 298,
+  "non_actions_confirmed": [
+    "no external staging deployment",
+    "no private reachable staging deployment",
+    "no DNS mutation",
+    "no TLS mutation",
+    "no auth/security mutation",
+    "no customer data",
+    "no customer-facing claims",
+    "no production-readiness claims"
+  ],
+  "required_phrases_present": {
+    "Approval gates": true,
+    "Backup and restore": true,
+    "BLOCKED until a concrete private-staging request manifest/evidence bundle exists": true,
+    "Cleanup": true,
+    "Container and Docker image pinning": true,
+    "Current state for this task: Gate 0 only": true,
+    "DNS/TLS assumptions": true,
+    "Host boundary": true,
+    "No DNS mutation": true,
+    "No customer-facing claims": true,
+    "No external staging deployment": true,
+    "Observability": true,
+    "Private network and exposure boundary": true,
+    "Rollback": true
+  },
+  "sha256": "7ada11e5668fd1084da771cd0b66c1379587b9d423e108ad31f59035889d74b8",
+  "task_id": "t_74d16018"
+}
