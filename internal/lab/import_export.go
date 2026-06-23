@@ -171,6 +171,25 @@ func (s *Store) ImportForScope(scope Scope, payload []byte, opts ImportOptions, 
 }
 
 func (s *Store) ExportForScope(scope Scope, opts ExportOptions) ([]byte, error) {
+	return s.exportForScope(scope, opts)
+}
+
+func (s *Store) ExportForScopeAsActor(scope Scope, opts ExportOptions, actor ActorContext) ([]byte, error) {
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	entity := strings.TrimSpace(opts.Entity)
+	if entity == "" {
+		entity = ImportEntityClients
+	}
+	if err := s.AuthorizeOperationForScope(scope, OperationExportRun, actor, AuditResource{Type: "export", ID: entity}, map[string]any{"entity": entity, "format": string(opts.Format)}); err != nil {
+		return nil, err
+	}
+	return s.exportForScope(scope, opts)
+}
+
+func (s *Store) exportForScope(scope Scope, opts ExportOptions) ([]byte, error) {
 	scope, err := normalizeScope(scope)
 	if err != nil {
 		return nil, err

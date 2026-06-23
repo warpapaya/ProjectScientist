@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,5 +175,34 @@ func TestExportClientsFixturesAsCSVJSONAndXLSX(t *testing.T) {
 	}
 	if len(parsed) != 2 || parsed[0]["name"] != "Alpha Environmental" || parsed[1]["email"] != "beta@example.test" {
 		t.Fatalf("unexpected xlsx fixture: %#v", parsed)
+	}
+}
+
+func TestExportForScopeAsActorRequiresExportPermission(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "project-scientist.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	_, _ = store.CreateClient("Alpha Environmental", "alpha@example.test", actorWithRoles("seed-manager", RoleLabManager))
+
+	if _, err := store.ExportForScopeAsActor(DefaultScope, ExportOptions{Format: ImportFormatCSV, Entity: ImportEntityClients}, actorWithRoles("analyst", RoleAnalyst)); !errors.Is(err, ErrAuthorizationDenied) {
+		t.Fatalf("expected analyst export denial, got %v", err)
+	}
+
+	csvBytes, err := store.ExportForScopeAsActor(DefaultScope, ExportOptions{Format: ImportFormatCSV, Entity: ImportEntityClients}, actorWithRoles("manager", RoleLabManager))
+	if err != nil {
+		t.Fatalf("expected lab manager export allowed: %v", err)
+	}
+	if !strings.Contains(string(csvBytes), "Alpha Environmental") {
+		t.Fatalf("authorized export missing client row: %s", csvBytes)
+	}
+
+	events, err := store.AuditEventsForScope(DefaultScope, 0)
+	if err != nil {
+		t.Fatalf("audit events: %v", err)
+	}
+	if !auditDeniedEventExists(events, string(OperationExportRun), "export", ImportEntityClients) {
+		t.Fatalf("missing denied export audit event: %#v", events)
 	}
 }
