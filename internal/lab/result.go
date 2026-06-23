@@ -101,6 +101,10 @@ func (s *Store) CreateResultForScope(scope Scope, input ResultInput, actor Actor
 			deniedErr = fmt.Errorf("analysis request line %q is outside requested tenant/lab scope", line.ID)
 			return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "result.create.requested", Outcome: AuditOutcomeDenied, Reason: "scope_mismatch", Resource: AuditResource{Type: "analysis_request_line", ID: line.ID}})
 		}
+		if line.Status == AnalysisRequestLineStatusCancelled {
+			deniedErr = fmt.Errorf("cannot enter result for cancelled analysis request line %q", input.AnalysisRequestLineID)
+			return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "result.create.requested", Outcome: AuditOutcomeDenied, Reason: "line_cancelled", Resource: AuditResource{Type: "analysis_request_line", ID: line.ID}, Details: map[string]any{"sample_id": line.SampleID}})
+		}
 		allowed, authErr := authorizeOperationTx(tx, scope, OperationResultEntry, actor, AuditResource{Type: "analysis_request_line", ID: line.ID}, map[string]any{"sample_id": line.SampleID})
 		if authErr != nil {
 			return authErr
@@ -158,6 +162,14 @@ func (s *Store) UpdateResultForScope(scope Scope, id string, input ResultInput, 
 		if current.TenantID != scope.TenantID || current.LabID != scope.LabID {
 			deniedErr = fmt.Errorf("result %q is outside requested tenant/lab scope", id)
 			return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "result.update.requested", Outcome: AuditOutcomeDenied, Reason: "scope_mismatch", Resource: AuditResource{Type: "result", ID: id}})
+		}
+		line, err := analysisRequestLineByIDTx(tx, current.AnalysisRequestLineID)
+		if err != nil {
+			return err
+		}
+		if line.Status == AnalysisRequestLineStatusCancelled {
+			deniedErr = fmt.Errorf("cannot update result for cancelled analysis request line %q", current.AnalysisRequestLineID)
+			return appendAuditTx(tx, auditWrite{Scope: scope, Actor: actor, Action: "result.update.requested", Outcome: AuditOutcomeDenied, Reason: "line_cancelled", Resource: AuditResource{Type: "result", ID: current.ID}, Details: map[string]any{"analysis_request_line_id": current.AnalysisRequestLineID, "sample_id": current.SampleID}})
 		}
 		if current.Status != ResultStatusEntered {
 			deniedErr = fmt.Errorf("result %q is locked after review; reopen before amending", id)
@@ -340,6 +352,24 @@ func (s *Store) ResultsForScope(scope Scope) []Result {
 	return results
 }
 
+func (s *Store) GetResultForAnalysisRequestLine(lineID string) (Result, bool) {
+	return s.GetResultForAnalysisRequestLineForScope(defaultScope(), lineID)
+}
+
+func (s *Store) GetResultForAnalysisRequestLineForScope(scope Scope, lineID string) (Result, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	scope, err := normalizeScope(scope)
+	if err != nil {
+		return Result{}, false
+	}
+	result, err := resultByAnalysisRequestLineTx(s.db, lineID)
+	if err != nil || result.TenantID != scope.TenantID || result.LabID != scope.LabID {
+		return Result{}, false
+	}
+	return result, true
+}
+
 func normalizeResultInput(input ResultInput) ResultInput {
 	input.AnalysisRequestLineID = strings.TrimSpace(input.AnalysisRequestLineID)
 	input.RawValue = strings.TrimSpace(input.RawValue)
@@ -432,6 +462,10 @@ type resultQueryer interface{ QueryRow(string, ...any) *sql.Row }
 
 func resultByIDTx(q resultQueryer, id string) (Result, error) {
 	return scanResult(q.QueryRow(resultSelectSQL+` FROM results WHERE id = ?`, strings.TrimSpace(id)))
+}
+
+func resultByAnalysisRequestLineTx(q resultQueryer, lineID string) (Result, error) {
+	return scanResult(q.QueryRow(resultSelectSQL+` FROM results WHERE analysis_request_line_id = ?`, strings.TrimSpace(lineID)))
 }
 
 type resultScanner interface{ Scan(dest ...any) error }
