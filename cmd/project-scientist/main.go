@@ -760,6 +760,10 @@ func (a *app) sampleAction(w http.ResponseWriter, r *http.Request) {
 		a.recordCustodyEvent(w, r)
 		return
 	}
+	if strings.HasSuffix(r.URL.Path, "/coc-package") {
+		a.generateCOCPackage(w, r)
+		return
+	}
 	http.NotFound(w, r)
 }
 
@@ -830,6 +834,58 @@ func (a *app) recordCustodyEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+}
+
+func (a *app) generateCOCPackage(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasSuffix(r.URL.Path, "/coc-package") {
+		http.NotFound(w, r)
+		return
+	}
+	sampleID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/samples/"), "/coc-package")
+	if sampleID == "" || strings.Contains(sampleID, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	pkg, err := a.store.GenerateCOCPackageForScope(scopeFromRequest(r), lab.COCPackageInput{SampleID: sampleID, PackageFormat: r.FormValue("package_format"), Attachments: cocPackageAttachmentsFromRequest(r)}, actor(r))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, lab.ErrAuthorizationDenied) {
+			status = http.StatusForbidden
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	if wantsJSON(r) {
+		writeJSON(w, pkg, http.StatusCreated)
+		return
+	}
+	http.Redirect(w, r, scopedHome(scopeFromRequest(r)), http.StatusSeeOther)
+}
+
+func cocPackageAttachmentsFromRequest(r *http.Request) []lab.ReportPackageAttachmentInput {
+	names := r.Form["attachment_name"]
+	mediaTypes := r.Form["attachment_media_type"]
+	contents := r.Form["attachment_content_text"]
+	sourceArtifactIDs := r.Form["attachment_source_artifact_id"]
+	attachments := make([]lab.ReportPackageAttachmentInput, 0, len(names))
+	for i, name := range names {
+		mediaType := valueAt(mediaTypes, i)
+		content := valueAt(contents, i)
+		sourceArtifactID := valueAt(sourceArtifactIDs, i)
+		attachments = append(attachments, lab.ReportPackageAttachmentInput{Name: name, MediaType: mediaType, Content: []byte(content), SourceArtifactID: sourceArtifactID})
+	}
+	return attachments
+}
+
+func valueAt(values []string, index int) string {
+	if index < 0 || index >= len(values) {
+		return ""
+	}
+	return values[index]
 }
 
 func (a *app) createWorksheet(w http.ResponseWriter, r *http.Request) {

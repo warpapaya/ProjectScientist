@@ -1,6 +1,7 @@
 package lab
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -37,6 +38,7 @@ type syntheticDemoFixture struct {
 		Matrix struct {
 			Name string `json:"name"`
 		} `json:"matrix"`
+		CustodyExpectation string `json:"custody_expectation"`
 	} `json:"sample"`
 	AnalysisProfile struct {
 		Analytes []struct {
@@ -70,6 +72,9 @@ func (s *Store) ResetAndSeedSyntheticDemo(fixturePath string, actor ActorContext
 	sample, err := s.CreateSample(CreateSampleInput{ClientID: client.ID, Project: fixture.Project.Name, Matrix: fixture.Sample.Matrix.Name, Tests: analysisNames}, actor)
 	if err != nil {
 		return SyntheticDemoSeedSummary{}, fmt.Errorf("seed demo sample: %w", err)
+	}
+	if _, err := s.RecordCustodyEvent(CustodyEventInput{SampleID: sample.ID, Type: CustodyReceived, Location: "Receiving bench", Reason: fixture.Sample.CustodyExpectation}, actor); err != nil {
+		return SyntheticDemoSeedSummary{}, fmt.Errorf("seed demo custody event: %w", err)
 	}
 	referenceSummary, err := s.SeedDemoSampleReferenceData(actor)
 	if err != nil {
@@ -105,17 +110,34 @@ func loadSyntheticDemoFixture(path string) (syntheticDemoFixture, error) {
 func (s *Store) resetLocalDemoStore() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.withTx(func(tx *sql.Tx) error {
+	if err := s.withTx(func(tx *sql.Tx) error {
 		for _, stmt := range []string{
+			`DROP TRIGGER IF EXISTS custody_events_immutable_update`,
+			`DROP TRIGGER IF EXISTS custody_events_immutable_delete`,
+			`DROP TRIGGER IF EXISTS report_snapshots_immutable_update`,
+			`DROP TRIGGER IF EXISTS report_snapshots_immutable_delete`,
+			`DROP TRIGGER IF EXISTS report_artifacts_immutable_update`,
+			`DROP TRIGGER IF EXISTS report_artifacts_immutable_delete`,
+			`DROP TRIGGER IF EXISTS coc_packages_immutable_update`,
+			`DROP TRIGGER IF EXISTS coc_packages_immutable_delete`,
+			`DROP TRIGGER IF EXISTS report_package_attachments_immutable_update`,
+			`DROP TRIGGER IF EXISTS report_package_attachments_immutable_delete`,
 			`DELETE FROM audit_checkpoints`,
 			`DELETE FROM audit_events`,
 			`DELETE FROM worksheet_lines`,
 			`DELETE FROM worksheets`,
+			`DELETE FROM results`,
+			`DELETE FROM report_package_attachments`,
+			`DELETE FROM coc_packages`,
+			`DELETE FROM report_supersessions`,
+			`DELETE FROM report_artifacts`,
+			`DELETE FROM report_snapshots`,
+			`DELETE FROM custody_events`,
 			`DELETE FROM analysis_request_lines`,
 			`DELETE FROM samples`,
 			`DELETE FROM clients`,
 			`DELETE FROM sample_reference_items`,
-			`UPDATE store_meta SET value = '1' WHERE key IN ('next_client', 'next_sample', 'next_worksheet', 'next_analysis_request_line', 'next_audit', 'next_sample_reference')`,
+			`UPDATE store_meta SET value = '1' WHERE key IN ('next_client', 'next_sample', 'next_worksheet', 'next_analysis_request_line', 'next_audit', 'next_sample_reference', 'next_custody_event', 'next_result', 'next_report_snapshot', 'next_report_artifact', 'next_coc_package', 'next_report_package_attachment')`,
 			`UPDATE store_meta SET value = '' WHERE key = 'last_hash'`,
 		} {
 			if _, err := tx.Exec(stmt); err != nil {
@@ -123,5 +145,8 @@ func (s *Store) resetLocalDemoStore() error {
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	return s.migrate(context.Background())
 }
