@@ -258,7 +258,7 @@ Tasks:
 - Extract/import tooling for SENAITE exports or API dumps.
 - Reconciliation reports.
 - Golden dataset migration tests.
-- Gap report per customer workflow.
+- Gap report per customer workflow (see `docs/customer-workflow-gap-report.md`).
 
 Exit criteria:
 - Synthetic and non-sensitive exported data can round-trip with reconciliation.
