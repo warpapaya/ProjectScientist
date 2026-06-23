@@ -251,25 +251,8 @@ func (s *Store) CreateQCRelationshipForScope(scope Scope, input CreateQCRelation
 		if input.RelatedSampleID == "" && input.AnalysisRequestLineID == "" {
 			return errors.New("QC relationship requires a related sample or analysis request line")
 		}
-		if input.RelatedSampleID != "" {
-			if err := requireSampleInScopeTx(tx, scope, input.RelatedSampleID); err != nil {
-				return fmt.Errorf("related sample %q is outside requested tenant/lab scope", input.RelatedSampleID)
-			}
-		}
-		if input.AnalysisRequestLineID != "" {
-			line, err := analysisRequestLineByIDTx(tx, input.AnalysisRequestLineID)
-			if err != nil {
-				if errors.Is(err, sql.ErrNoRows) {
-					return fmt.Errorf("unknown analysis request line %q", input.AnalysisRequestLineID)
-				}
-				return err
-			}
-			if line.TenantID != scope.TenantID || line.LabID != scope.LabID {
-				return fmt.Errorf("analysis request line %q is outside requested tenant/lab scope", input.AnalysisRequestLineID)
-			}
-			if input.RelatedSampleID != "" && line.SampleID != input.RelatedSampleID {
-				return fmt.Errorf("analysis request line %q belongs to sample %q, not related sample %q", input.AnalysisRequestLineID, line.SampleID, input.RelatedSampleID)
-			}
+		if err := requireQCRelationshipTargetsInBatchTx(tx, scope, input.QCBatchID, input.RelatedSampleID, input.AnalysisRequestLineID); err != nil {
+			return err
 		}
 		next, err := nextCounter(tx, "next_qc_relationship")
 		if err != nil {
@@ -333,8 +316,10 @@ func (s *Store) TransitionQCBatchForScope(scope Scope, batchID string, next QCBa
 			if err != nil {
 				return err
 			}
-			if !batchHasQCItemAndRelationship(qcItems, relationships) {
-				return errors.New("QC batch requires at least one QC item with a relationship before review or acceptance")
+			if ok, err := batchHasValidQCItemAndRelationshipTx(tx, scope, qcItems, relationships); err != nil {
+				return err
+			} else if !ok {
+				return errors.New("QC batch requires at least one QC item with a valid in-batch relationship before review or acceptance")
 			}
 		}
 		now := time.Now().UTC()
@@ -418,19 +403,108 @@ func allowedQCBatchTransition(current, next QCBatchStatus) bool {
 	}
 }
 
-func batchHasQCItemAndRelationship(items []QCItem, relationships []QCRelationship) bool {
-	qcItemIDs := map[string]bool{}
+func batchHasValidQCItemAndRelationshipTx(q rowQueryer, scope Scope, items []QCItem, relationships []QCRelationship) (bool, error) {
+	qcItems := map[string]QCItem{}
 	for _, item := range items {
 		if item.Role == QCItemRoleQCSample {
-			qcItemIDs[item.ID] = true
+			qcItems[item.ID] = item
 		}
 	}
 	for _, rel := range relationships {
-		if qcItemIDs[rel.QCItemID] {
-			return true
+		item, ok := qcItems[rel.QCItemID]
+		if !ok {
+			continue
+		}
+		definition, ok := QCDefinitionForKind(item.QCSampleKind)
+		if !ok || !relationshipTypeAllowed(definition, rel.RelationshipType) {
+			continue
+		}
+		if rel.RelatedSampleID == "" && rel.AnalysisRequestLineID == "" {
+			continue
+		}
+		if err := requireQCRelationshipTargetsInBatchTx(q, scope, rel.QCBatchID, rel.RelatedSampleID, rel.AnalysisRequestLineID); err == nil {
+			return true, nil
+		} else if isUnknownQCRelationshipReferenceErr(err) {
+			return false, err
 		}
 	}
-	return false
+	return false, nil
+}
+
+func requireQCRelationshipTargetsInBatchTx(q rowQueryer, scope Scope, batchID, relatedSampleID, analysisRequestLineID string) error {
+	batchID = strings.TrimSpace(batchID)
+	relatedSampleID = strings.TrimSpace(relatedSampleID)
+	analysisRequestLineID = strings.TrimSpace(analysisRequestLineID)
+	batchSamples, err := qcBatchSampleIDsTx(q, scope, batchID)
+	if err != nil {
+		return err
+	}
+	if relatedSampleID != "" {
+		if err := requireSampleInScopeQueryer(q, scope, relatedSampleID); err != nil {
+			return fmt.Errorf("related sample %q is outside requested tenant/lab scope", relatedSampleID)
+		}
+		if !batchSamples[relatedSampleID] {
+			return fmt.Errorf("related sample %q is not part of QC batch %q composition", relatedSampleID, batchID)
+		}
+	}
+	if analysisRequestLineID != "" {
+		line, err := analysisRequestLineByIDTx(q, analysisRequestLineID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("unknown analysis request line %q", analysisRequestLineID)
+			}
+			return err
+		}
+		if line.TenantID != scope.TenantID || line.LabID != scope.LabID {
+			return fmt.Errorf("analysis request line %q is outside requested tenant/lab scope", analysisRequestLineID)
+		}
+		if relatedSampleID != "" && line.SampleID != relatedSampleID {
+			return fmt.Errorf("analysis request line %q belongs to sample %q, not related sample %q", analysisRequestLineID, line.SampleID, relatedSampleID)
+		}
+		if !batchSamples[line.SampleID] {
+			return fmt.Errorf("analysis request line %q sample %q is not part of QC batch %q composition", analysisRequestLineID, line.SampleID, batchID)
+		}
+	}
+	return nil
+}
+
+func requireSampleInScopeQueryer(q rowQueryer, scope Scope, sampleID string) error {
+	if strings.TrimSpace(sampleID) == "" {
+		return errors.New("sample id is required")
+	}
+	var tenantID, labID string
+	if err := q.QueryRow(`SELECT tenant_id, lab_id FROM samples WHERE id = ?`, strings.TrimSpace(sampleID)).Scan(&tenantID, &labID); err != nil {
+		return err
+	}
+	if tenantID != scope.TenantID || labID != scope.LabID {
+		return fmt.Errorf("sample %q is outside requested tenant/lab scope", sampleID)
+	}
+	return nil
+}
+
+func qcBatchSampleIDsTx(q rowQueryer, scope Scope, batchID string) (map[string]bool, error) {
+	rows, err := q.Query(`SELECT sample_id FROM qc_items WHERE tenant_id = ? AND lab_id = ? AND qc_batch_id = ?`, scope.TenantID, scope.LabID, strings.TrimSpace(batchID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	sampleIDs := map[string]bool{}
+	for rows.Next() {
+		var sampleID string
+		if err := rows.Scan(&sampleID); err != nil {
+			return nil, err
+		}
+		sampleIDs[sampleID] = true
+	}
+	return sampleIDs, rows.Err()
+}
+
+func isUnknownQCRelationshipReferenceErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "unknown analysis request line") || strings.Contains(message, "outside requested tenant/lab scope")
 }
 
 type rowQueryer interface {

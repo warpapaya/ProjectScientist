@@ -32,7 +32,7 @@ The model intentionally separates:
 
 | Type | Meaning | Typical QC kinds |
 | --- | --- | --- |
-| `batch_control` | QC sample applies to a preparation/analytical batch. | Blanks, LCS, control samples. |
+| `batch_control` | QC sample applies to the declared QC batch composition; any related sample or line target must be represented by a `qc_items` row in that same batch. | Blanks, LCS, control samples. |
 | `duplicate_of` | QC sample duplicates a client sample or another QC aliquot. | Field/lab duplicates, MSD. |
 | `spike_of` | QC sample is fortified from a source sample/matrix. | MS/MSD. |
 | `control_for_method` | QC sample verifies method performance independent of a specific client sample. | LCS, control samples, method blanks. |
@@ -83,10 +83,13 @@ Lab-test v1 workflow rules:
 
 1. New batches start `open`.
 2. Items and relationships can be added only while the batch is `open`.
-3. `open` batches may move to `in_review` only after at least one QC item has a relationship.
-4. `in_review` batches may move to `accepted` or `rejected`; both terminal decisions require a reason.
-5. Rejected batches may be reopened for correction; accepted batches are terminal in v1.
-6. Creation, composition, relationship, and status changes emit append-only audit events with identifiers only.
+3. `qc_relationships.related_sample_id`, when supplied, must be the sample from a `qc_items` row in the same `qc_batch_id`; scoped samples outside the batch composition are rejected.
+4. `qc_relationships.analysis_request_line_id`, when supplied, must belong to the related sample (if supplied) and to a sample represented in the same batch composition.
+5. `batch_control` relationships are batch-scoped controls over the declared composition, not a placeholder for arbitrary tenant/lab scoped sample targets.
+6. `open` batches may move to `in_review` only after at least one QC sample item has a valid in-batch relationship; persisted invalid/out-of-composition relationships do not satisfy review readiness.
+7. `in_review` batches may move to `accepted` or `rejected`; both terminal decisions require a reason.
+8. Rejected batches may be reopened for correction; accepted batches are terminal in v1.
+9. Creation, composition, relationship, and status changes emit append-only audit events with identifiers only.
 
 ## Downstream implementation tasks
 
