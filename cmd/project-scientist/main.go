@@ -141,6 +141,9 @@ func serve() error {
 func (a *app) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", a.index)
+	mux.HandleFunc("GET /login", a.loginPage)
+	mux.HandleFunc("POST /login", a.login)
+	mux.HandleFunc("POST /logout", a.logout)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /api/state", a.apiState)
 	mux.HandleFunc("POST /api/demo/reset", a.demoReset)
@@ -1474,6 +1477,116 @@ func parseOptionalRequestTime(raw string) time.Time {
 	return time.Time{}
 }
 
+func (a *app) loginPage(w http.ResponseWriter, r *http.Request) {
+	if _, err := a.currentSession(r); err == nil {
+		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		return
+	}
+	a.renderLogin(w, http.StatusOK, "")
+}
+
+func (a *app) login(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	token, ok := a.sessionTokenForLogin(r.FormValue("username"), r.FormValue("password"))
+	if !ok {
+		a.renderLogin(w, http.StatusUnauthorized, "The username or password was not recognized.")
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+	})
+	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+}
+
+func (a *app) logout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+		MaxAge:   -1,
+	})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func (a *app) renderLogin(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	data := struct{ Message string }{Message: message}
+	if err := loginTemplate.Execute(w, data); err != nil {
+		log.Printf("render login: %v", err)
+	}
+}
+
+func (a *app) sessionTokenForLogin(username, password string) (string, bool) {
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+	expectedPassword := configuredLoginPassword()
+	if a == nil || len(a.sessions) == 0 || username == "" || password == "" || expectedPassword == "" {
+		return "", false
+	}
+	if subtle.ConstantTimeCompare([]byte(password), []byte(expectedPassword)) != 1 {
+		return "", false
+	}
+	now := time.Now
+	if a.now != nil {
+		now = a.now
+	}
+	for token, session := range a.sessions {
+		if session.Actor.UserID != username {
+			continue
+		}
+		if !session.ExpiresAt.IsZero() && !now().Before(session.ExpiresAt) {
+			continue
+		}
+		return token, true
+	}
+	return "", false
+}
+
+func configuredLoginPassword() string {
+	return strings.TrimSpace(getenv("PSC_INTERNAL_SESSION_PASSWORD", "project-scientist-dev"))
+}
+
+var loginTemplate = template.Must(template.New("login").Parse(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in • Project Scientist</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="login-body">
+  <main class="login-shell">
+    <section class="login-card-wrap">
+      <div class="login-brand">
+        <p class="eyebrow">Project Scientist</p>
+        <h1>Sign in to the lab workspace</h1>
+        <p>Use the local dev account to evaluate the v0.1 SaaS workflow without manually injecting cookies.</p>
+      </div>
+      <form class="login-card" method="post" action="/login">
+        <h2>Welcome back</h2>
+        {{if .Message}}<p class="login-error" role="alert">{{.Message}}</p>{{end}}
+        <label><span>Username</span><input name="username" autocomplete="username" placeholder="lab-dev" required autofocus></label>
+        <label><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
+        <button>Sign in</button>
+        <p class="login-hint">Local default: <code>lab-dev</code> / <code>project-scientist-dev</code>. Override with <code>PSC_INTERNAL_SESSION_USER</code> and <code>PSC_INTERNAL_SESSION_PASSWORD</code>.</p>
+      </form>
+    </section>
+  </main>
+</body>
+</html>`))
+
 const (
 	sessionCookieName   = "psc_internal_session"
 	csrfHeaderName      = "X-PSC-CSRF-Token"
@@ -1527,7 +1640,7 @@ func configuredInternalSessions() map[string]authenticatedSession {
 
 func (a *app) requireSessionBoundary(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/static/") {
+		if r.URL.Path == "/healthz" || r.URL.Path == "/login" || r.URL.Path == "/logout" || strings.HasPrefix(r.URL.Path, "/static/") {
 			next.ServeHTTP(w, r)
 			return
 		}

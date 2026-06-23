@@ -10,7 +10,7 @@
 <body>
   <header class="topbar">
     <div><p class="eyebrow">Clearline lab-test lane</p><h1>Project Scientist</h1></div>
-    <div class="status-pill">Local dev • {{.Scope.TenantID}}/{{.Scope.LabID}} • append-only audit</div>
+    <div class="topbar-actions"><div class="status-pill">Local dev • {{.Scope.TenantID}}/{{.Scope.LabID}} • append-only audit</div><form method="post" action="/logout"><button class="ghost-button">Sign out</button></form></div>
   </header>
 
   <main class="shell">
